@@ -649,24 +649,55 @@ function openResult() {
   if (!dialog.open) dialog.showModal();
 }
 
+/** 휴대폰·태블릿 (iPadOS는 PC처럼 보이므로 터치 지원으로 구분) */
+function isMobile() {
+  const uad = /** @type {any} */ (navigator).userAgentData;
+  if (uad && typeof uad.mobile === 'boolean' && uad.mobile) return true;
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
+/** 클립보드에 복사. 안 되는 브라우저는 예전 방식으로. */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+}
+
+/** 초대하기: 모바일은 공유 창(카톡 등), PC는 문구+링크 복사 */
 async function invite() {
   if (!view) return;
   const url = `${location.origin}${location.pathname}?room=${view.code}`;
-  const text = `오늘도 빙고 방 ${view.code}에 들어와요`;
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: '오늘도 빙고', text, url });
+  const message = `오늘도 빙고 같이 해요!\n방 코드: ${view.code}\n${url}`;
+  if (isMobile() && navigator.share) {
+    try {
+      // 링크를 문구 안에 넣어 보낸다 (앱마다 url 칸을 따로 버리는 경우가 있어서)
+      await navigator.share({ title: '오늘도 빙고', text: message });
       return;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      // 공유가 안 되면 복사로
     }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return;
   }
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('초대 링크를 복사했어요');
-  } catch {
-    toast(`방 코드: ${view.code}`);
-  }
+  if (await copyText(message)) toast('초대 문구와 링크를 복사했어요');
+  else toast(`방 코드: ${view.code}`);
 }
 
 function initRoom() {
