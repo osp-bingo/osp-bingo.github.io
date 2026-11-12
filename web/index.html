@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>오늘도 빙고</title>
+  <meta name="application-name" content="오늘도 빙고">
+  <meta name="apple-mobile-web-app-title" content="오늘도 빙고">
+  <meta name="description" content="친구들과 방 코드 하나로 모여 하는 숫자 빙고. 3×3부터 9×9까지, 직접 부르거나 대포로 뽑아요.">
+  <meta name="theme-color" content="#2440c4">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="오늘도 빙고">
+  <meta property="og:description" content="친구들과 방 코드 하나로 모여 하는 숫자 빙고">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <!-- 홈 -->
+  <main id="home" class="screen" hidden>
+    <div class="hero">
+      <div class="hero-balls" aria-hidden="true"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
+      <h1 class="logo"><small>오늘도</small>빙고</h1>
+      <p class="hero-lead">방 코드 하나로 모여서, 먼저 줄을 채우고 빙고를 외쳐요.</p>
+    </div>
+
+    <div class="sheet">
+      <label class="field">
+        <span>닉네임</span>
+        <input id="nick" maxlength="10" autocomplete="nickname" placeholder="한글·영문·숫자 2~10자" enterkeyhint="done">
+      </label>
+      <p class="field-error" id="nick-error" role="alert"></p>
+
+      <div id="resume" class="resume" hidden>
+        <span>하던 방 <b id="resume-code"></b>이 있어요</span>
+        <button class="btn btn-small" id="resume-go">돌아가기</button>
+      </div>
+
+      <button class="btn btn-primary btn-big" id="go-create">방 만들기</button>
+
+      <div class="join">
+        <input id="join-code" maxlength="4" placeholder="방 코드 4자리" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="방 코드">
+        <button class="btn btn-ink" id="join-go">들어가기</button>
+      </div>
+
+      <button class="link" data-open="rules">빙고 규칙 보기</button>
+    </div>
+  </main>
+
+  <!-- 방 만들기 -->
+  <main id="create" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn" data-back aria-label="처음으로"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h2>방 만들기</h2>
+    </header>
+    <div class="sheet" id="create-form"></div>
+  </main>
+
+  <!-- 방 -->
+  <main id="room" class="screen room" hidden>
+    <header class="topbar">
+      <button class="icon-btn" id="room-leave" aria-label="방 나가기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h2 class="room-code">방 <b id="room-code"></b></h2>
+      <button class="btn btn-small btn-ghost-light" id="invite">초대하기</button>
+    </header>
+
+    <p class="room-rule" id="room-rule"></p>
+    <p class="conn" id="conn" hidden>다시 연결하는 중…</p>
+
+    <section class="caller" id="caller" hidden aria-live="polite">
+      <div class="ball" id="ball"><span id="ball-num">–</span></div>
+      <div class="caller-text">
+        <p class="caller-who" id="caller-who"></p>
+        <p class="caller-turn" id="caller-turn"></p>
+        <div class="timer" aria-hidden="true"><i id="timer-bar"></i></div>
+      </div>
+      <button class="btn btn-cannon" id="fire" hidden>대포 쏘기</button>
+    </section>
+
+    <ul class="players" id="players" aria-label="참가자"></ul>
+
+    <section class="card-wrap">
+      <div class="card" id="card">
+        <div class="card-head" id="card-head"></div>
+        <div class="board" id="board" role="grid"></div>
+      </div>
+      <p class="hint" id="hint"></p>
+    </section>
+
+    <section id="picker-wrap" hidden>
+      <div class="picker-tools">
+        <button class="btn btn-small btn-ghost-light" id="fill-random">무작위 채우기</button>
+        <button class="btn btn-small btn-ghost-light" id="clear-cell">칸 비우기</button>
+        <button class="btn btn-small btn-ghost-light" id="clear-all">모두 지우기</button>
+      </div>
+      <div class="picker" id="picker"></div>
+    </section>
+
+    <section id="history-wrap" hidden>
+      <h3 class="history-title">나온 숫자 <span id="history-count"></span></h3>
+      <ol class="history" id="history"></ol>
+    </section>
+
+    <div class="actionbar">
+      <div class="actionbar-inner" id="actions"></div>
+    </div>
+  </main>
+
+  <!-- 방장 설정 바꾸기 -->
+  <dialog id="settings-dialog" class="dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>방 설정</h2>
+      <div id="settings-form"></div>
+      <p class="dialog-note">판 크기를 바꾸면 모두의 빙고판이 지워지고 준비가 풀려요.</p>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" value="cancel">닫기</button>
+        <button class="btn btn-primary" value="save" id="settings-save">바꾸기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 결과 -->
+  <dialog id="result-dialog" class="dialog">
+    <div class="dialog-body">
+      <h2>최종 순위</h2>
+      <ol class="result" id="result"></ol>
+      <div class="dialog-actions" id="result-actions"></div>
+    </div>
+  </dialog>
+
+  <!-- 규칙 -->
+  <dialog id="rules" class="dialog">
+    <form method="dialog" class="dialog-body rules">
+      <h2>빙고 규칙</h2>
+      <ol>
+        <li>방장이 빙고판 크기와 숫자 부르는 방식을 정해요.</li>
+        <li>각자 빙고판에 숫자를 겹치지 않게 채우고 <b>준비 완료</b>를 눌러요. 3×3은 1~15, 5×5는 1~35, 7×7은 1~63, 9×9는 1~99 중에서 골라요.</li>
+        <li>모두 준비되면 방장이 시작해요. 차례는 무작위로 정해져요.</li>
+        <li><b>직접 부르기</b>: 내 차례에 내 빙고판의 숫자를 눌러 불러요. 부른 칸은 자동으로 칠해져요.<br><b>대포</b>: 내 차례에 대포를 쏘면 아직 안 나온 숫자가 무작위로 나와요.</li>
+        <li>나온 숫자는 각자 직접 눌러서 칠해요. 칠하지 않은 칸은 빙고로 치지 않아요.</li>
+        <li>판 크기만큼 줄을 완성하면(3×3은 3줄, 9×9는 9줄) <b>빙고</b> 버튼이 켜져요. 먼저 누른 순서대로 등수가 정해지고, 꼴찌가 나올 때까지 계속해요.</li>
+        <li>등수가 정해진 사람의 차례는 건너뛰어요.</li>
+        <li>차례 시간(직접 부르기 30초, 대포 15초)이 지나면 대포는 자동으로 발사되고, 직접 부르기는 내 빙고판에서 아직 안 나온 숫자 하나를 무작위로 불러요.</li>
+      </ol>
+      <div class="dialog-actions"><button class="btn btn-primary">알겠어요</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,121 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  # main에서만. Cloudflare 시크릿 두 개(CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID)가 있으면 게임 서버를 배포한다.
+  deploy-worker:
+    name: Deploy game server (Cloudflare)
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.cf.outputs.ready }}
+    defaults:
+      run:
+        working-directory: worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Check Cloudflare settings
+        id: cf
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Cloudflare 시크릿이 없어 서버 배포를 건너뜁니다. 웹은 서버 없이(방을 만들 수 없는 상태로) 배포됩니다."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cf.outputs.ready == 'true'
+        run: npm ci
+      # 이 저장소의 GitHub Pages 주소(https://<계정>.github.io)도 서버를 쓸 수 있게 덧붙인다.
+      - name: Allow this Pages origin
+        if: steps.cf.outputs.ready == 'true'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          origin="https://$(printf '%s' "$OWNER" | tr 'A-Z' 'a-z').github.io"
+          sed -i "s#^ALLOWED_ORIGINS = \"#ALLOWED_ORIGINS = \"$origin,#" wrangler.toml
+          grep '^ALLOWED_ORIGINS' wrangler.toml
+      - name: Deploy worker
+        if: steps.cf.outputs.ready == 'true'
+        run: npx wrangler deploy
+      - name: Health check
+        if: steps.cf.outputs.ready == 'true'
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "https://api.ohsangplay.com/bingo/api/health"; then echo; exit 0; fi
+            sleep 3
+          done
+          echo "::error::서버가 응답하지 않습니다: https://api.ohsangplay.com/bingo/api/health"
+          exit 1
+
+  build-web:
+    name: Build web
+    needs: deploy-worker
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (needs.deploy-worker.result == 'success' || needs.deploy-worker.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Write server address
+        env:
+          # 저장소 변수 API_BASE_URL이 있으면 그 값, 없으면 공용 API 도메인
+          API_BASE_URL: ${{ vars.API_BASE_URL || (needs.deploy-worker.outputs.ready == 'true' && 'https://api.ohsangplay.com/bingo') || '' }}
+        run: |
+          mkdir -p _site
+          cp -r web/. _site/
+          printf "export const API_BASE = '%s';\n" "$API_BASE_URL" > _site/js/config.js
+          cat _site/js/config.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: build-web
+    if: ${{ !cancelled() && needs.build-web.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

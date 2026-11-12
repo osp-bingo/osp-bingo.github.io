@@ -1,0 +1,24 @@
+name = "bingo-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# 서버 주소: https://api.ohsangplay.com/bingo (오상플레이 공용 API 도메인을 앱마다 경로로 나눠 쓴다)
+# api.ohsangplay.com DNS 레코드는 야추·4S 챌린지 때 이미 만들어 둠. /bingo는 src/routing.ts가 떼고 처리한다.
+routes = [
+  { pattern = "api.ohsangplay.com/bingo/*", zone_name = "ohsangplay.com" },
+]
+workers_dev = true
+
+# 방 하나당 Durable Object 하나 (무료 플랜은 SQLite 기반 클래스 사용)
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "BingoRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BingoRoom"]
+
+[vars]
+# 서버를 쓸 수 있는 웹 주소. 배포 때 GitHub Actions가 https://<계정>.github.io 를 덧붙인다.
+# https://localhost(안드로이드 앱), capacitor://localhost(iOS 앱)
+ALLOWED_ORIGINS = "https://bingo.ohsangplay.com,http://localhost,http://127.0.0.1,https://localhost,capacitor://localhost"
