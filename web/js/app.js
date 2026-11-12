@@ -366,6 +366,7 @@ function render() {
   renderCaller(v);
   renderBoard(v);
   renderWatch(v);
+  renderPeek(v);
   renderPicker(v);
   renderHistory(v);
   renderActions(v, isHost);
@@ -408,15 +409,82 @@ function renderPlayers(v) {
         if (v.game?.turn === p.id && v.phase === 'playing') cls.push('turn');
         if (p.id === v.me) cls.push('me');
         if (!p.connected || p.left) cls.push('off');
+        const peekable = canPeek(v, p.id);
+        if (peekable) cls.push('peekable');
         return el(
           'li',
-          { class: cls.join(' ') },
+          { class: cls.join(' '), 'data-id': p.id, ...(peekable ? { role: 'button', tabindex: 0 } : {}) },
           dot ? el('span', { class: 'dot', text: dot }) : null,
           `${p.id === v.hostId ? '👑 ' : ''}${p.name}`,
           el('span', { class: 'tag', text: tag }),
         );
       }),
   );
+}
+
+/** 관전자만, 게임 중에 그 사람 빙고판을 받았을 때 크게 볼 수 있다 */
+function canPeek(v, id) {
+  return !!v.my?.spectator && v.phase !== 'lobby' && !!v.boards?.some((b) => b.id === id);
+}
+
+let peekId = null;
+
+function openPeek(id) {
+  if (!view || !canPeek(view, id)) return;
+  peekId = id;
+  renderPeek(view);
+  const d = /** @type {HTMLDialogElement} */ ($('peek-dialog'));
+  if (!d.open) d.showModal();
+}
+
+/** 열려 있으면 상태가 바뀔 때마다 같이 갱신 */
+function renderPeek(v) {
+  const d = /** @type {HTMLDialogElement} */ ($('peek-dialog'));
+  if (!peekId) return;
+  if (!canPeek(v, peekId)) {
+    if (d.open) d.close();
+    peekId = null;
+    return;
+  }
+  const size = v.settings.size;
+  const b = v.boards.find((x) => x.id === peekId);
+  const p = v.players.find((x) => x.id === peekId);
+  const lines = completedLines(b.marked, size);
+  const inLine = new Set(lines.flat());
+  const lastNum = v.phase === 'playing' ? v.game?.lastCall?.number : undefined;
+  const isTurn = v.phase === 'playing' && v.game?.turn === peekId;
+  const status = p?.left ? '나감' : p?.rank ? `${p.rank}등` : `빙고 ${lines.length} / ${v.goal}줄`;
+  $('peek-title').replaceChildren(
+    el('b', { text: `${p?.id === v.hostId ? '👑 ' : ''}${p?.name ?? ''}` }),
+    el('span', { text: status }),
+    ...(isTurn ? [el('span', { class: 'now', text: ' · 지금 차례' })] : []),
+  );
+  const board = $('peek-board');
+  board.className = `board size-${size}`;
+  board.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+  board.replaceChildren(
+    ...b.board.map((n, i) => {
+      const c = ['cell'];
+      if (b.marked[i]) c.push('marked');
+      if (inLine.has(i)) c.push('in-line');
+      if (n === lastNum && !b.marked[i]) c.push('hot');
+      return el('div', { class: c.join(' ') }, el('span', { text: String(n) }));
+    }),
+  );
+  const many = v.boards.length > 1;
+  $('peek-prev').hidden = !many;
+  $('peek-next').hidden = !many;
+}
+
+/** 크게 보기에서 앞/뒤 사람으로 (차례 순서) */
+function stepPeek(dir) {
+  const v = view;
+  if (!v?.boards || !peekId) return;
+  const order = v.game?.order ?? v.boards.map((b) => b.id);
+  const ids = order.filter((id) => v.boards.some((b) => b.id === id));
+  const i = ids.indexOf(peekId);
+  peekId = ids[(i + dir + ids.length) % ids.length];
+  renderPeek(v);
 }
 
 function renderWatchers(v) {
@@ -448,7 +516,7 @@ function renderWatch(v) {
       const status = p?.left ? '나감' : p?.rank ? `${p.rank}등` : `${lines.length}/${v.goal}줄`;
       return el(
         'div',
-        { class: cls.join(' ') },
+        { class: cls.join(' '), 'data-id': b.id, role: 'button', tabindex: 0, 'aria-label': `${p?.name ?? ''} 빙고판 크게 보기` },
         el(
           'div',
           { class: 'mini-head' },
@@ -831,6 +899,24 @@ async function invite() {
 }
 
 function initRoom() {
+  const peekFrom = (e) => {
+    const t = /** @type {HTMLElement} */ (e.target).closest('[data-id]');
+    if (t) openPeek(t.getAttribute('data-id'));
+  };
+  const peekKey = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      peekFrom(e);
+    }
+  };
+  for (const id of ['watch-grid', 'players']) {
+    $(id).addEventListener('click', peekFrom);
+    $(id).addEventListener('keydown', peekKey);
+  }
+  $('peek-prev').addEventListener('click', () => stepPeek(-1));
+  $('peek-next').addEventListener('click', () => stepPeek(1));
+  $('peek-close').addEventListener('click', () => /** @type {HTMLDialogElement} */ ($('peek-dialog')).close());
+  $('peek-dialog').addEventListener('close', () => (peekId = null));
   $('board').addEventListener('click', onBoardClick);
   $('picker').addEventListener('click', onPick);
   $('fire').addEventListener('click', () => conn?.send({ type: 'fire' }));

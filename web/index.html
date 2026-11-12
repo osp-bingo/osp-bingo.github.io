@@ -129,6 +129,19 @@
     </form>
   </dialog>
 
+  <!-- 관전: 한 사람 빙고판 크게 보기 -->
+  <dialog id="peek-dialog" class="dialog peek">
+    <div class="dialog-body">
+      <div class="peek-head">
+        <button class="icon-btn peek-nav" id="peek-prev" aria-label="이전 사람"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="peek-title" id="peek-title"></div>
+        <button class="icon-btn peek-nav" id="peek-next" aria-label="다음 사람"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+      <div class="board" id="peek-board"></div>
+      <div class="dialog-actions"><button class="btn btn-ghost" id="peek-close">닫기</button></div>
+    </div>
+  </dialog>
+
   <!-- 결과 -->
   <dialog id="result-dialog" class="dialog">
     <div class="dialog-body">

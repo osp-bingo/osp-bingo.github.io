@@ -225,6 +225,20 @@ button { font: inherit; color: inherit; }
 .mini-board.size-9 { --mini-fs: 8px; gap: 1px; }
 .mini-board.size-7 .mini-cell, .mini-board.size-9 .mini-cell { border-radius: 2px; }
 
+/* 크게 보기 */
+.mini, .player.peekable { cursor: pointer; }
+.mini:hover, .mini:focus-visible { border-color: rgba(255,210,63,.6); }
+.mini.turn:hover { border-color: var(--ball); }
+.peek { width: min(94vw, 480px); }
+.peek-head { display: flex; align-items: center; gap: 10px; }
+.peek-nav { background: var(--card-soft); }
+.peek-nav svg { stroke: var(--ink); }
+.peek-title { flex: 1; text-align: center; }
+.peek-title b { display: block; font-size: 19px; }
+.peek-title span { font-size: 14px; color: var(--ink-soft); }
+.peek-title .now { color: var(--ball-deep); font-weight: 800; }
+.peek .cell { cursor: default; }
+
 /* 빙고 카드 */
 .card {
   background: var(--card); color: var(--ink); border-radius: 20px;
