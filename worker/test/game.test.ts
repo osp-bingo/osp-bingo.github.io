@@ -6,6 +6,7 @@ import {
   callNumber,
   changeSettings,
   createRoom,
+  parseSettings,
   disconnect,
   fire,
   join,
@@ -23,7 +24,7 @@ import {
   EXHAUSTED_WAIT_MS,
   LOBBY_DROP_MS,
 } from '../src/game';
-import { checkBoard, checkNickname, completedLines, fillRandom, lineCount } from '../../web/js/rules.js';
+import { checkBoard, checkNickname, checkWordBoard, completedLines, fillRandom, lineCount } from '../../web/js/rules.js';
 
 const T = 1_000_000;
 /** 항상 0 → 섞기 결과가 정해진다 */
@@ -121,7 +122,7 @@ describe('대기실', () => {
     changeSettings(s, a, { size: 5 }, T);
     expect(s.players[0].ready).toBe(false);
     expect(s.players[0].board).toBeNull();
-    expect(() => changeSettings(s, a, { kind: 'topic' }, T)).toThrow('준비 중');
+    expect(() => changeSettings(s, a, { kind: 'topic' }, T)).toThrow('주제를 입력');
   });
 
   it('방장이 나가면 다음 사람이 방장', () => {
@@ -221,8 +222,8 @@ describe('직접 부르기', () => {
     expect(tick(s, T + TURN_MS_PLAYER, zero)).toBe(true);
     const last = s.game!.lastCall!;
     expect(last).toMatchObject({ by: ids[0], how: 'player', auto: true });
-    expect(boardA).toContain(last.number);
-    expect(s.players[0].marked[boardA.indexOf(last.number)]).toBe(true);
+    expect(boardA).toContain(last.number as number);
+    expect(s.players[0].marked[boardA.indexOf(last.number as number)]).toBe(true);
     expect(s.game!.turn).toBe(ids[1]);
   });
 
@@ -358,5 +359,78 @@ describe('관전', () => {
     disconnect(s, 'w', T);
     tick(s, T + LOBBY_DROP_MS, keep);
     expect(s.players.some((p) => p.id === 'w')).toBe(false);
+  });
+});
+
+describe('주제빙고', () => {
+  const fruitA = ['사과', '배', '포도', '딸기', '수박', '참외', '키위', '망고', '귤'];
+  const fruitB = ['바나나', '체리', '자두', '복숭아', '레몬', '라임', '멜론', '파인 애플', '사과'];
+
+  function topicRoom() {
+    const s = createRoom('ABCD', { kind: 'topic', size: 3, callMode: 'player', topic: '과일' }, T);
+    const a = join(s, { playerId: null, name: '가나', newId: 'a' }, T);
+    const b = join(s, { playerId: null, name: '다라', newId: 'b' }, T);
+    ready(s, a, fruitA, T);
+    ready(s, b, fruitB, T);
+    start(s, a, T, keep);
+    return { s, a, b };
+  }
+
+  it('주제는 필수, 대포는 없음 (직접 부르기로 고정)', () => {
+    expect(() => parseSettings({ kind: 'topic', size: 3, callMode: 'player' })).toThrow('주제');
+    expect(parseSettings({ kind: 'topic', size: 5, callMode: 'cannon', topic: '  과일 ' })).toEqual({
+      kind: 'topic',
+      size: 5,
+      callMode: 'player',
+      topic: '과일',
+    });
+  });
+
+  it('빙고판: 단어를 다 채우고 내 판 안에서 겹치지 않게 (띄어쓰기·대소문자 무시)', () => {
+    expect(checkWordBoard(fruitA, 3)).toBeNull();
+    expect(checkWordBoard(['사과', '사 과', ...fruitA.slice(2)], 3)).toMatch('두 번');
+    expect(checkWordBoard(['Apple', 'apple', ...fruitA.slice(2)], 3)).toMatch('두 번');
+    expect(checkWordBoard(['', ...fruitA.slice(1)], 3)).toMatch('모든 칸');
+    expect(checkWordBoard(['가나다라마바사아자차카타파', ...fruitA.slice(1)], 3)).toMatch('12글자');
+  });
+
+  it('내 판의 단어를 부르면 자동 색칠, 같은 단어를 적은 사람은 직접 칠함', () => {
+    const { s, a, b } = topicRoom();
+    callNumber(s, a, '사과', T);
+    expect(s.players[0].marked[0]).toBe(true);
+    expect(s.players[1].marked[8]).toBe(false);
+    mark(s, b, 8, T);
+    expect(s.players[1].marked[8]).toBe(true);
+    expect(() => mark(s, b, 0, T)).toThrow('나오지 않은 단어');
+  });
+
+  it('띄어쓰기가 달라도 같은 단어로 칠할 수 있음', () => {
+    const s = createRoom('ABCD', { kind: 'topic', size: 3, callMode: 'player', topic: '과일' }, T);
+    const a = join(s, { playerId: null, name: '가나', newId: 'a' }, T);
+    const b = join(s, { playerId: null, name: '다라', newId: 'b' }, T);
+    ready(s, a, ['파인애플', ...fruitA.slice(1)], T);
+    ready(s, b, fruitB, T);
+    start(s, a, T, keep);
+    callNumber(s, a, '파인애플', T);
+    mark(s, b, 7, T); // '파인 애플'
+    expect(s.players[1].marked[7]).toBe(true);
+    expect(() => callNumber(s, b, '파인 애플', T)).toThrow('이미 나온');
+  });
+
+  it('내 판에 없는 단어는 부를 수 없고, 시간이 지나면 내 판 단어 중 하나를 자동으로', () => {
+    const { s, a } = topicRoom();
+    expect(() => callNumber(s, a, '바나나', T)).toThrow('빙고판에 있는 단어');
+    tick(s, T + TURN_MS_PLAYER, zero);
+    expect(fruitA).toContain(s.game!.lastCall!.number);
+    expect(() => fire(s, s.game!.turn!, T, zero)).toThrow('직접 부르는');
+  });
+
+  it('주제를 바꾸면 빙고판이 지워짐', () => {
+    const s = createRoom('ABCD', { kind: 'topic', size: 3, callMode: 'player', topic: '과일' }, T);
+    const a = join(s, { playerId: null, name: '가나', newId: 'a' }, T);
+    ready(s, a, fruitA, T);
+    changeSettings(s, a, { topic: '동물' }, T);
+    expect(s.players[0]).toMatchObject({ board: null, ready: false });
+    expect(() => ready(s, a, boardA, T)).toThrow();
   });
 });

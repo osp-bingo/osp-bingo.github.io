@@ -1,5 +1,19 @@
 import { RoomConnection, activeRoom, createRoom } from './net.js';
-import { MAX_NUMBER, MAX_PLAYERS, SIZES, checkBoard, checkNickname, completedLines, fillRandom, goalLines } from './rules.js';
+import {
+  MAX_NUMBER,
+  MAX_PLAYERS,
+  SIZES,
+  WORD_MAX,
+  checkBoard,
+  checkNickname,
+  checkTopic,
+  checkWordBoard,
+  cleanWord,
+  completedLines,
+  fillRandom,
+  goalLines,
+  wordKey,
+} from './rules.js';
 
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const NICK_KEY = 'bingo.nick';
@@ -17,7 +31,17 @@ let stampCell = -1;
 let shownResultRound = -1;
 let timerHandle = 0;
 
-const createSettings = { kind: 'number', size: 5, callMode: 'player' };
+const createSettings = { kind: 'number', size: 5, callMode: 'player', topic: '' };
+
+const isTopic = (v) => v?.settings?.kind === 'topic';
+/** 같은 칸 값인지 비교하는 키 (주제빙고는 띄어쓰기·대소문자 무시) */
+const keyFor = (v, x) => (isTopic(v) ? wordKey(x) : x);
+const emptyCell = (v) => (isTopic(v) ? '' : 0);
+/** 공에 들어갈 글자 크기: 단어가 길수록 작게 */
+function fitText(node, text, base) {
+  const len = [...String(text)].length;
+  node.style.fontSize = len <= 2 ? '' : `${Math.max(9, Math.round(base * Math.min(1, 2.2 / len)))}px`;
+}
 
 /* ------------------------------------------------ 공통 */
 
@@ -163,21 +187,42 @@ function settingsChoices(settings, onChange) {
       el('b', { text: title }),
       sub,
     );
+  const topic = settings.kind === 'topic';
+  // 주제빙고는 대포 없이 직접 부르기만
+  if (topic) settings.callMode = 'player';
+  const topicInput = el('input', {
+    class: 'topic-input',
+    maxlength: 20,
+    placeholder: '예: 과일, 동물, 라면 이름',
+    value: settings.topic ?? '',
+    'aria-label': '주제',
+    oninput: (e) => (settings.topic = /** @type {HTMLInputElement} */ (e.target).value),
+  });
   return el(
     'div',
     { class: 'settings' },
     group('빙고 종류', 'two', [
       choice('kind', 'number', '숫자빙고', el('small', { text: '숫자를 채우고 불러요' })),
-      choice('kind', 'topic', '주제빙고', el('small', { class: 'soon', text: '준비 중' }), true),
+      choice('kind', 'topic', '주제빙고', el('small', { text: '주제에 맞는 단어를 채워요' })),
     ]),
+    topic ? el('label', { class: 'field topic-field' }, el('span', { text: '주제' }), topicInput) : null,
     group(
       '빙고판 크기',
       'sizes',
-      SIZES.map((n) => choice('size', n, `${n}×${n}`, el('small', {}, `1~${MAX_NUMBER[n]}`, el('br'), `${goalLines(n)}줄 빙고`))),
+      SIZES.map((n) =>
+        choice(
+          'size',
+          n,
+          `${n}×${n}`,
+          topic
+            ? el('small', {}, `${n * n}칸`, el('br'), `${goalLines(n)}줄 빙고`)
+            : el('small', {}, `1~${MAX_NUMBER[n]}`, el('br'), `${goalLines(n)}줄 빙고`),
+        ),
+      ),
     ),
-    group('숫자 부르는 방식', 'two', [
-      choice('callMode', 'player', '직접 부르기', el('small', { text: '차례가 되면 내 빙고판 숫자를 골라 불러요' })),
-      choice('callMode', 'cannon', '대포', el('small', { text: '차례가 되면 대포를 쏴서 무작위 숫자가 나와요' })),
+    group(topic ? '부르는 방식' : '숫자 부르는 방식', 'two', [
+      choice('callMode', 'player', '직접 부르기', el('small', { text: `차례가 되면 내 빙고판 ${topic ? '단어' : '숫자'}를 골라 불러요` })),
+      choice('callMode', 'cannon', '대포', el('small', { text: topic ? '주제빙고는 직접 부르기만 돼요' : '차례가 되면 대포를 쏴서 무작위 숫자가 나와요' }), topic),
     ]),
   );
 }
@@ -188,6 +233,14 @@ function renderCreate() {
   go.addEventListener('click', async () => {
     const name = readNick();
     if (!name) return show('home');
+    if (createSettings.kind === 'topic') {
+      const t = checkTopic(createSettings.topic);
+      if (!t.ok) {
+        toast(t.error);
+        /** @type {HTMLInputElement | null} */ (document.querySelector('#create-form .topic-input'))?.focus();
+        return;
+      }
+    }
     go.disabled = true;
     try {
       const code = await createRoom(createSettings);
@@ -249,7 +302,7 @@ function exitRoom(sendLeave = true) {
   show('home');
 }
 
-const draftKey = (v) => `bingo.draft.${v.code}.${v.settings.size}`;
+const draftKey = (v) => `bingo.draft.${v.code}.${v.settings.size}.${isTopic(v) ? `t:${v.settings.topic}` : 'n'}`;
 
 /** 서버 상태에 맞춰 내 빙고판 초안을 맞춘다. */
 function syncDraft(v) {
@@ -259,12 +312,14 @@ function syncDraft(v) {
     let cells = null;
     try {
       const saved = JSON.parse(load(key) ?? 'null');
-      if (Array.isArray(saved) && saved.length === size * size) cells = saved.map((n) => (Number.isInteger(n) ? n : 0));
+      if (Array.isArray(saved) && saved.length === size * size) {
+        cells = saved.map((n) => (isTopic(v) ? (typeof n === 'string' ? n : '') : Number.isInteger(n) ? n : 0));
+      }
     } catch {
       // 무시
     }
-    cells ??= v.my?.board ? [...v.my.board] : Array(size * size).fill(0);
-    draft = { key, cells, selected: Math.max(0, cells.indexOf(0)) };
+    cells ??= v.my?.board ? [...v.my.board] : Array(size * size).fill(emptyCell(v));
+    draft = { key, cells, selected: Math.max(0, cells.findIndex((x) => !x)) };
   }
   if (v.my?.board && (v.my.ready || v.phase !== 'lobby')) draft.cells = [...v.my.board];
 }
@@ -355,8 +410,13 @@ function render() {
   // 규칙 한 줄 + 방장 설정
   const rule = $('room-rule');
   rule.replaceChildren(
-    `${size}×${size} 숫자빙고, 1~${v.maxNumber} 숫자, ${callModeName(v.settings.callMode)}. ${v.goal}줄을 먼저 채우면 빙고! `,
+    isTopic(v)
+      ? `${size}×${size} 주제빙고, 직접 부르기. ${v.goal}줄을 먼저 채우면 빙고! `
+      : `${size}×${size} 숫자빙고, 1~${v.maxNumber} 숫자, ${callModeName(v.settings.callMode)}. ${v.goal}줄을 먼저 채우면 빙고! `,
   );
+  const banner = $('topic-banner');
+  banner.hidden = !isTopic(v);
+  if (isTopic(v)) banner.replaceChildren(el('span', { text: '주제' }), el('b', { text: v.settings.topic ?? '' }));
   if (isHost && v.phase === 'lobby') {
     rule.append(el('button', { class: 'link', style: 'color:#fff;padding:0 4px', text: '설정 바꾸기', onclick: openSettings }));
   }
@@ -451,7 +511,7 @@ function renderPeek(v) {
   const p = v.players.find((x) => x.id === peekId);
   const lines = completedLines(b.marked, size);
   const inLine = new Set(lines.flat());
-  const lastNum = v.phase === 'playing' ? v.game?.lastCall?.number : undefined;
+  const lastKey = v.phase === 'playing' && v.game?.lastCall ? keyFor(v, v.game.lastCall.number) : undefined;
   const isTurn = v.phase === 'playing' && v.game?.turn === peekId;
   const status = p?.left ? '나감' : p?.rank ? `${p.rank}등` : `빙고 ${lines.length} / ${v.goal}줄`;
   $('peek-title').replaceChildren(
@@ -460,14 +520,14 @@ function renderPeek(v) {
     ...(isTurn ? [el('span', { class: 'now', text: ' · 지금 차례' })] : []),
   );
   const board = $('peek-board');
-  board.className = `board size-${size}`;
+  board.className = `board size-${size}${isTopic(v) ? ' words' : ''}`;
   board.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
   board.replaceChildren(
     ...b.board.map((n, i) => {
       const c = ['cell'];
       if (b.marked[i]) c.push('marked');
       if (inLine.has(i)) c.push('in-line');
-      if (n === lastNum && !b.marked[i]) c.push('hot');
+      if (keyFor(v, n) === lastKey && !b.marked[i]) c.push('hot');
       return el('div', { class: c.join(' ') }, el('span', { text: String(n) }));
     }),
   );
@@ -502,7 +562,7 @@ function renderWatch(v) {
   wrap.hidden = !(v.my?.spectator && v.phase !== 'lobby' && v.boards);
   if (wrap.hidden) return;
   const size = v.settings.size;
-  const lastNum = v.phase === 'playing' ? v.game?.lastCall?.number : undefined;
+  const lastKey = v.phase === 'playing' && v.game?.lastCall ? keyFor(v, v.game.lastCall.number) : undefined;
   const order = v.game?.order ?? [];
   const boards = [...v.boards].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   $('watch-grid').replaceChildren(
@@ -525,12 +585,12 @@ function renderWatch(v) {
         ),
         el(
           'div',
-          { class: `mini-board size-${size}`, style: `grid-template-columns: repeat(${size}, 1fr)` },
+          { class: `mini-board size-${size}${isTopic(v) ? ' words' : ''}`, style: `grid-template-columns: repeat(${size}, 1fr)` },
           ...b.board.map((n, i) => {
             const c = ['mini-cell'];
             if (b.marked[i]) c.push('marked');
             if (inLine.has(i)) c.push('in-line');
-            if (n === lastNum && !b.marked[i]) c.push('hot');
+            if (keyFor(v, n) === lastKey && !b.marked[i]) c.push('hot');
             return el('div', { class: c.join(' ') }, el('span', { text: String(n) }));
           }),
         ),
@@ -545,7 +605,10 @@ function renderCaller(v) {
   if (v.phase === 'lobby' || !v.game) return;
   const g = v.game;
   const last = g.lastCall;
-  $('ball-num').textContent = last ? String(last.number) : '?';
+  const ballNum = $('ball-num');
+  ballNum.textContent = last ? String(last.number) : '?';
+  $('ball').classList.toggle('word', isTopic(v));
+  fitText(ballNum, ballNum.textContent, isTopic(v) ? 18 : 26);
   const who = last?.byName ?? '';
   $('caller-who').textContent = !last
     ? '첫 숫자를 기다려요'
@@ -557,7 +620,7 @@ function renderCaller(v) {
         ? `${who}님 시간이 지나 자동으로 불렀어요`
         : `${who}님이 불렀어요`;
   // 방금 나온 숫자가 내 판에 있는지 바로 알 수 있게
-  const onMyBoard = !!last && !!v.my?.board?.includes(last.number);
+  const onMyBoard = !!last && !!v.my?.board?.some((x) => keyFor(v, x) === keyFor(v, last.number));
   const where = $('caller-where');
   where.hidden = !last || v.phase !== 'playing' || !!v.my?.rank || !!v.my?.spectator;
   where.className = `caller-where ${onMyBoard ? 'yes' : 'no'}`;
@@ -568,7 +631,10 @@ function renderCaller(v) {
   turnEl.classList.toggle('mine', mine);
   if (v.phase === 'finished') turnEl.textContent = '게임이 끝났어요';
   else if (g.exhausted) turnEl.textContent = '더 나올 숫자가 없어요. 칠하고 빙고를 눌러요';
-  else if (mine) turnEl.textContent = v.settings.callMode === 'player' ? '내 차례! 부를 숫자를 빙고판에서 눌러요' : '내 차례! 대포를 쏴요';
+  else if (mine) {
+    turnEl.textContent =
+      v.settings.callMode === 'player' ? `내 차례! 부를 ${isTopic(v) ? '단어' : '숫자'}를 빙고판에서 눌러요` : '내 차례! 대포를 쏴요';
+  }
   else turnEl.textContent = `${v.players.find((p) => p.id === g.turn)?.name ?? ''}님 차례`;
 
   $('fire').hidden = !(mine && v.settings.callMode === 'cannon');
@@ -592,15 +658,15 @@ function renderBoard(v) {
   if (v.my?.spectator) return;
   const size = v.settings.size;
   const board = $('board');
-  board.className = `board size-${size}`;
+  board.className = `board size-${size}${isTopic(v) ? ' words' : ''}`;
   board.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
   const lobby = v.phase === 'lobby';
   const marked = v.my?.marked ?? [];
   const inLine = new Set(lobby ? [] : completedLines(marked, size).flat());
-  const called = new Set(v.game?.called ?? []);
+  const called = new Set((v.game?.called ?? []).map((x) => keyFor(v, x)));
   const myTurnToCall = v.phase === 'playing' && v.game?.turn === v.me && v.settings.callMode === 'player';
   // 방금 나온 숫자가 내 판에 있으면 그 칸을 표시 (칠할 때까지)
-  const lastNum = v.phase === 'playing' ? v.game?.lastCall?.number : undefined;
+  const lastKey = v.phase === 'playing' && v.game?.lastCall ? keyFor(v, v.game.lastCall.number) : undefined;
   const cells = draft.cells;
 
   const nodes = cells.map((n, i) => {
@@ -610,8 +676,8 @@ function renderBoard(v) {
     if (!lobby && marked[i]) cls.push('marked');
     if (!lobby && marked[i] && i === stampCell) cls.push('stamp');
     if (inLine.has(i)) cls.push('in-line');
-    if (myTurnToCall && n && !called.has(n)) cls.push('callable');
-    if (n && n === lastNum && !marked[i]) cls.push('hot');
+    if (myTurnToCall && n && !called.has(keyFor(v, n))) cls.push('callable');
+    if (n && keyFor(v, n) === lastKey && !marked[i]) cls.push('hot');
     return el(
       'button',
       { class: cls.join(' '), 'data-i': i, role: 'gridcell', 'aria-label': n ? `${n}${marked[i] ? ', 칠함' : ''}` : '빈 칸' },
@@ -623,7 +689,7 @@ function renderBoard(v) {
 
   const head = $('card-head');
   if (lobby) {
-    const filled = cells.filter((n) => n > 0).length;
+    const filled = cells.filter((n) => !!n).length;
     head.replaceChildren(el('span', { text: '내 빙고판' }), el('span', { class: 'count', text: `${filled} / ${cells.length}칸` }));
   } else {
     const lines = completedLines(marked, size).length;
@@ -646,12 +712,18 @@ function onBoardClick(e) {
     }
     draft.selected = i;
     render();
+    if (isTopic(v)) {
+      const input = /** @type {HTMLInputElement} */ ($('word-input'));
+      input.value = String(draft.cells[i] || '');
+      input.focus();
+      input.select();
+    }
     return;
   }
   if (v.phase !== 'playing' || !v.my?.board) return;
   const n = v.my.board[i];
   if (v.my.marked[i]) return;
-  const called = v.game?.called.includes(n);
+  const called = !!v.game?.called.some((x) => keyFor(v, x) === keyFor(v, n));
   if (called) {
     // 바로 칠해 보이고 서버에도 보낸다
     v.my.marked[i] = true;
@@ -665,13 +737,21 @@ function onBoardClick(e) {
     conn.send({ type: 'call', number: n });
     return;
   }
-  toast('아직 나오지 않은 숫자예요');
+  toast(isTopic(v) ? '아직 나오지 않은 단어예요' : '아직 나오지 않은 숫자예요');
 }
 
 function renderPicker(v) {
   const wrap = $('picker-wrap');
   wrap.hidden = !(v.phase === 'lobby' && !v.my?.ready && !v.my?.spectator);
   if (wrap.hidden) return;
+  const topic = isTopic(v);
+  $('word-form').hidden = !topic;
+  $('picker').hidden = topic;
+  $('fill-random').hidden = topic;
+  if (topic) {
+    $('word-target').textContent = `${draft.selected + 1}번째 칸`;
+    return;
+  }
   const used = new Set(draft.cells.filter((n) => n > 0));
   const picks = [];
   for (let n = 1; n <= v.maxNumber; n++) {
@@ -686,11 +766,44 @@ function onPick(e) {
   const n = Number(btn.getAttribute('data-n'));
   draft.cells[draft.selected] = n;
   // 다음 빈 칸으로 (뒤쪽 먼저, 없으면 앞쪽)
-  const after = draft.cells.findIndex((x, i) => i > draft.selected && x === 0);
-  const any = draft.cells.indexOf(0);
-  draft.selected = after >= 0 ? after : any >= 0 ? any : draft.selected;
+  moveToNextEmpty();
   saveDraft();
   render();
+}
+
+/** 다음 빈 칸으로 (뒤쪽 먼저, 없으면 앞쪽) */
+function moveToNextEmpty() {
+  const after = draft.cells.findIndex((x, i) => i > draft.selected && !x);
+  const any = draft.cells.findIndex((x) => !x);
+  draft.selected = after >= 0 ? after : any >= 0 ? any : draft.selected;
+}
+
+/** 주제빙고: 고른 칸에 단어 넣기 */
+function onWordSubmit(e) {
+  e.preventDefault();
+  if (!view) return;
+  const input = /** @type {HTMLInputElement} */ ($('word-input'));
+  const word = cleanWord(input.value);
+  if (!word) {
+    toast('단어를 입력해 주세요');
+    return;
+  }
+  if ([...word].length > WORD_MAX) {
+    toast(`단어는 ${WORD_MAX}글자까지 쓸 수 있어요`);
+    return;
+  }
+  const key = wordKey(word);
+  const dup = draft.cells.findIndex((x, i) => i !== draft.selected && x && wordKey(x) === key);
+  if (dup >= 0) {
+    toast(`'${word}'는 이미 ${dup + 1}번째 칸에 있어요`);
+    return;
+  }
+  draft.cells[draft.selected] = word;
+  moveToNextEmpty();
+  saveDraft();
+  render();
+  input.value = String(draft.cells[draft.selected] || '');
+  input.focus();
 }
 
 function renderHistory(v) {
@@ -698,7 +811,8 @@ function renderHistory(v) {
   wrap.hidden = v.phase === 'lobby' || !v.game;
   if (wrap.hidden) return;
   const called = v.game.called;
-  $('history-count').textContent = `${called.length} / ${v.maxNumber}`;
+  $('history-count').textContent = isTopic(v) ? `${called.length}개` : `${called.length} / ${v.maxNumber}`;
+  $('history').classList.toggle('words', isTopic(v));
   $('history').replaceChildren(
     ...called.map((n, i) => el('li', { class: i === called.length - 1 ? 'last' : '', text: String(n) })),
   );
@@ -731,7 +845,7 @@ function renderActions(v, isHost) {
     if (isHost) items.push(startBtn());
   } else if (v.phase === 'lobby' && my) {
     if (!my.ready) {
-      const full = !checkBoard(draft.cells, v.settings.size);
+      const full = !(isTopic(v) ? checkWordBoard(draft.cells, v.settings.size) : checkBoard(draft.cells, v.settings.size));
       items.push(spectateBtn());
       items.push(
         el('button', {
@@ -789,11 +903,17 @@ function renderHint(v) {
           ? '관전 중이에요. 모든 사람의 빙고판을 볼 수 있어요. 게임이 끝나면 참여할 수 있어요.'
           : '';
   } else if (v.phase === 'lobby') {
-    if (!v.my?.ready) text = `칸을 고르고 아래에서 숫자를 눌러 채워요. 1~${v.maxNumber} 중 겹치지 않게.`;
+    if (!v.my?.ready) {
+      text = isTopic(v)
+        ? `칸을 고르고 주제 '${v.settings.topic}'에 맞는 단어를 넣어요. 내 판 안에서는 겹치지 않게.`
+        : `칸을 고르고 아래에서 숫자를 눌러 채워요. 1~${v.maxNumber} 중 겹치지 않게.`;
+    }
     else if (v.hostId === v.me) text = '모두 준비 완료하면 게임을 시작할 수 있어요.';
     else text = '준비 완료! 방장이 시작하길 기다려요.';
   } else if (v.phase === 'playing') {
-    text = v.my?.rank ? '등수가 정해졌어요. 다른 사람이 끝날 때까지 지켜봐요.' : '숫자가 나오면 내 빙고판에서 직접 눌러 칠해요. 칠하지 않은 칸은 빙고가 아니에요.';
+    text = v.my?.rank
+      ? '등수가 정해졌어요. 다른 사람이 끝날 때까지 지켜봐요.'
+      : `${isTopic(v) ? '단어' : '숫자'}가 나오면 내 빙고판에서 직접 눌러 칠해요. 칠하지 않은 칸은 빙고가 아니에요.`;
   }
   $('hint').textContent = text;
 }
@@ -919,6 +1039,7 @@ function initRoom() {
   $('peek-dialog').addEventListener('close', () => (peekId = null));
   $('board').addEventListener('click', onBoardClick);
   $('picker').addEventListener('click', onPick);
+  $('word-form').addEventListener('submit', onWordSubmit);
   $('fire').addEventListener('click', () => conn?.send({ type: 'fire' }));
   $('invite').addEventListener('click', invite);
   $('fill-random').addEventListener('click', () => {
@@ -928,12 +1049,14 @@ function initRoom() {
     render();
   });
   $('clear-cell').addEventListener('click', () => {
-    draft.cells[draft.selected] = 0;
+    draft.cells[draft.selected] = emptyCell(view);
+    /** @type {HTMLInputElement} */ ($('word-input')).value = '';
     saveDraft();
     render();
   });
   $('clear-all').addEventListener('click', () => {
-    draft.cells = draft.cells.map(() => 0);
+    draft.cells = draft.cells.map(() => emptyCell(view));
+    /** @type {HTMLInputElement} */ ($('word-input')).value = '';
     draft.selected = 0;
     saveDraft();
     render();

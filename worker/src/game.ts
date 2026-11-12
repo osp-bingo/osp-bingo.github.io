@@ -7,6 +7,10 @@ import {
   MIN_PLAYERS,
   checkBoard,
   checkNickname,
+  checkTopic,
+  checkWordBoard,
+  cleanWord,
+  wordKey,
   goalLines,
   isSize,
   lineCount,
@@ -15,13 +19,18 @@ import {
 export class RoomError extends Error {}
 
 export type Kind = 'number' | 'topic';
-/** player: 차례대로 자기 빙고판 숫자를 부른다 / cannon: 차례가 되면 대포를 쏴서 무작위 숫자 */
+/** player: 차례대로 자기 빙고판 칸을 부른다 / cannon: 차례가 되면 대포를 쏴서 무작위 숫자 (숫자빙고만) */
 export type CallMode = 'player' | 'cannon';
+
+/** 칸 값: 숫자빙고는 숫자, 주제빙고는 단어 */
+export type Cell = number | string;
 
 export interface Settings {
   kind: Kind;
   size: number;
   callMode: CallMode;
+  /** 주제빙고 주제 */
+  topic?: string;
 }
 
 export interface Player {
@@ -31,7 +40,7 @@ export interface Player {
   disconnectedAt: number | null;
   ready: boolean;
   /** 칸마다 숫자 (가로 줄 순서). 준비 완료 때 정해진다. */
-  board: number[] | null;
+  board: Cell[] | null;
   marked: boolean[];
   rank: number | null;
   /** 게임 중에 나감 (기권) */
@@ -41,7 +50,8 @@ export interface Player {
 }
 
 export interface Call {
-  number: number;
+  /** 나온 값 (주제빙고는 단어) */
+  number: Cell;
   by: string | null;
   how: CallMode;
   /** 차례 시간이 지나 자동으로 (대포 자동 발사 / 내 판에서 무작위로 부름) */
@@ -53,7 +63,7 @@ export interface Game {
   order: string[];
   turn: string | null;
   deadline: number | null;
-  called: number[];
+  called: Cell[];
   lastCall: Call | null;
   nextRank: number;
   /** 더 부를 숫자가 없어 빙고만 기다리는 중 */
@@ -100,11 +110,27 @@ export function randomRoomCode(): string {
 
 export function parseSettings(value: unknown): Settings {
   const v = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
-  if (v.kind === 'topic') throw new RoomError('주제빙고는 준비 중이에요');
-  if (v.kind !== 'number') throw new RoomError('빙고 종류를 골라 주세요');
+  if (v.kind !== 'number' && v.kind !== 'topic') throw new RoomError('빙고 종류를 골라 주세요');
   if (!isSize(v.size)) throw new RoomError('빙고판 크기를 골라 주세요');
+  if (v.kind === 'topic') {
+    // 주제빙고는 대포 없이 직접 부르기만
+    const t = checkTopic(v.topic);
+    if (!t.ok) throw new RoomError(t.error);
+    return { kind: 'topic', size: v.size as number, callMode: 'player', topic: t.topic };
+  }
   if (v.callMode !== 'player' && v.callMode !== 'cannon') throw new RoomError('숫자 부르는 방식을 골라 주세요');
   return { kind: 'number', size: v.size as number, callMode: v.callMode };
+}
+
+const isTopic = (state: RoomState) => state.settings.kind === 'topic';
+
+/** 같은 칸 값인지 (주제빙고는 띄어쓰기·대소문자 무시) */
+function keyOf(state: RoomState, v: Cell): Cell {
+  return isTopic(state) ? wordKey(v) : v;
+}
+
+function calledKeys(state: RoomState): Set<Cell> {
+  return new Set((state.game?.called ?? []).map((v) => keyOf(state, v)));
 }
 
 export function createRoom(code: string, settings: Settings, now: number): RoomState {
@@ -209,7 +235,8 @@ export function changeSettings(state: RoomState, id: string, patch: unknown, now
   needHost(state, id);
   if (state.phase !== 'lobby') throw new RoomError('게임 중에는 설정을 바꿀 수 없어요');
   const next = parseSettings({ ...state.settings, ...((patch ?? {}) as object) });
-  if (next.size !== state.settings.size) {
+  const cur = state.settings;
+  if (next.size !== cur.size || next.kind !== cur.kind || (next.kind === 'topic' && next.topic !== cur.topic)) {
     for (const p of state.players) {
       p.board = null;
       p.ready = false;
@@ -225,9 +252,9 @@ export function ready(state: RoomState, id: string, board: unknown, now: number)
   const p = need(state, id);
   if (state.phase !== 'lobby') throw new RoomError('지금은 준비할 수 없어요');
   if (p.spectator) throw new RoomError('관전 중에는 준비할 수 없어요. 먼저 참여하기를 눌러 주세요');
-  const err = checkBoard(board, state.settings.size);
+  const err = isTopic(state) ? checkWordBoard(board, state.settings.size) : checkBoard(board, state.settings.size);
   if (err) throw new RoomError(err);
-  p.board = [...(board as number[])];
+  p.board = isTopic(state) ? (board as unknown[]).map(cleanWord) : [...(board as number[])];
   p.marked = emptyMarks(state.settings.size);
   p.ready = true;
   state.updatedAt = now;
@@ -257,7 +284,9 @@ export function play(state: RoomState, id: string, now: number): void {
   if (playerCount(state) >= MAX_PLAYERS) throw new RoomError(`참여 자리가 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
   p.spectator = false;
   p.ready = false;
-  if (p.board && p.board.length !== state.settings.size ** 2) p.board = null;
+  if (p.board && (p.board.length !== state.settings.size ** 2 || typeof p.board[0] !== (isTopic(state) ? 'string' : 'number'))) {
+    p.board = null;
+  }
   p.marked = emptyMarks(state.settings.size);
   state.updatedAt = now;
 }
@@ -294,9 +323,9 @@ function active(p: Player): boolean {
 }
 
 /** 이 사람이 지금 부를 수 있는 숫자들 */
-function callable(state: RoomState, p: Player): number[] {
-  const called = new Set(state.game?.called ?? []);
-  if (state.settings.callMode === 'player') return (p.board ?? []).filter((n) => !called.has(n));
+function callable(state: RoomState, p: Player): Cell[] {
+  const called = calledKeys(state);
+  if (state.settings.callMode === 'player') return (p.board ?? []).filter((v) => !called.has(keyOf(state, v)));
   const out: number[] = [];
   for (let n = 1; n <= MAX_NUMBER[state.settings.size]; n++) if (!called.has(n)) out.push(n);
   return out;
@@ -323,13 +352,14 @@ function advanceTurn(state: RoomState, now: number): void {
   g.deadline = now + EXHAUSTED_WAIT_MS;
 }
 
-function announce(state: RoomState, number: number, by: Player, auto: boolean, now: number): void {
+function announce(state: RoomState, number: Cell, by: Player, auto: boolean, now: number): void {
   const g = state.game!;
   g.called.push(number);
   g.lastCall = { number, by: by.id, how: state.settings.callMode, auto, at: now };
   // 직접 부른 사람은 그 칸이 자동으로 색칠된다.
   if (state.settings.callMode === 'player' && by.board) {
-    const idx = by.board.indexOf(number);
+    const key = keyOf(state, number);
+    const idx = by.board.findIndex((v) => keyOf(state, v) === key);
     if (idx >= 0) by.marked[idx] = true;
   }
 }
@@ -345,9 +375,11 @@ function needTurn(state: RoomState, id: string): Player {
 export function callNumber(state: RoomState, id: string, number: unknown, now: number): void {
   const p = needTurn(state, id);
   if (state.settings.callMode !== 'player') throw new RoomError('대포로 숫자를 뽑는 방이에요');
-  if (typeof number !== 'number' || !p.board?.includes(number)) throw new RoomError('내 빙고판에 있는 숫자만 부를 수 있어요');
-  if (state.game!.called.includes(number)) throw new RoomError('이미 나온 숫자예요');
-  announce(state, number, p, false, now);
+  const what = isTopic(state) ? '단어' : '숫자';
+  const value = p.board?.find((v) => (typeof number === typeof v) && keyOf(state, v) === keyOf(state, number as Cell));
+  if (value === undefined) throw new RoomError(`내 빙고판에 있는 ${what}만 부를 수 있어요`);
+  if (calledKeys(state).has(keyOf(state, value))) throw new RoomError(`이미 나온 ${what}예요`);
+  announce(state, value, p, false, now);
   advanceTurn(state, now);
   state.updatedAt = now;
 }
@@ -355,7 +387,7 @@ export function callNumber(state: RoomState, id: string, number: unknown, now: n
 /** 대포: 아직 안 나온 숫자 중 하나를 무작위로 */
 export function fire(state: RoomState, id: string, now: number, rand: () => number): void {
   const p = needTurn(state, id);
-  if (state.settings.callMode !== 'cannon') throw new RoomError('직접 숫자를 부르는 방이에요');
+  if (state.settings.callMode !== 'cannon') throw new RoomError('직접 부르는 방이에요');
   const pool = callable(state, p);
   announce(state, pool[Math.floor(rand() * pool.length)], p, false, now);
   advanceTurn(state, now);
@@ -369,7 +401,9 @@ export function mark(state: RoomState, id: string, cell: unknown, now: number): 
   if (state.phase !== 'playing' || !state.game || !p.board) throw new RoomError('게임 중이 아니에요');
   if (typeof cell !== 'number' || !Number.isInteger(cell) || cell < 0 || cell >= p.board.length) return;
   if (p.marked[cell]) return;
-  if (!state.game.called.includes(p.board[cell])) throw new RoomError('아직 나오지 않은 숫자예요');
+  if (!calledKeys(state).has(keyOf(state, p.board[cell]))) {
+    throw new RoomError(isTopic(state) ? '아직 나오지 않은 단어예요' : '아직 나오지 않은 숫자예요');
+  }
   p.marked[cell] = true;
   state.updatedAt = now;
 }
@@ -506,7 +540,7 @@ export function viewFor(state: RoomState, id: string | null, now: number) {
     hostId: state.hostId,
     me: me && !me.left ? me.id : null,
     settings: state.settings,
-    maxNumber: MAX_NUMBER[size],
+    maxNumber: isTopic(state) ? null : MAX_NUMBER[size],
     goal: goalLines(size),
     canStart: canStart(state),
     players: state.players.map((p) => ({

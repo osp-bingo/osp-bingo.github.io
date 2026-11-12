@@ -84,6 +84,7 @@
     <ul class="players" id="players" aria-label="참가자"></ul>
     <p class="watchers" id="watchers" hidden></p>
 
+    <p class="topic-banner" id="topic-banner" hidden></p>
     <section class="card-wrap">
       <div class="card" id="card">
         <div class="card-head" id="card-head"></div>
@@ -98,6 +99,13 @@
     </section>
 
     <section id="picker-wrap" hidden>
+      <form class="word-form" id="word-form" hidden autocomplete="off">
+        <label class="word-label" for="word-input"><span id="word-target"></span>에 넣을 단어</label>
+        <div class="word-row">
+          <input id="word-input" maxlength="12" placeholder="주제에 맞는 단어" enterkeyhint="next" autocomplete="off">
+          <button class="btn btn-go" type="submit">넣기</button>
+        </div>
+      </form>
       <div class="picker-tools">
         <button class="btn btn-small btn-ghost-light" id="fill-random">무작위 채우기</button>
         <button class="btn btn-small btn-ghost-light" id="clear-cell">칸 비우기</button>
@@ -156,11 +164,11 @@
     <form method="dialog" class="dialog-body rules">
       <h2>빙고 규칙</h2>
       <ol>
-        <li>방장이 빙고판 크기와 숫자 부르는 방식을 정해요.</li>
-        <li>각자 빙고판에 숫자를 겹치지 않게 채우고 <b>준비 완료</b>를 눌러요. 3×3은 1~15, 5×5는 1~35, 7×7은 1~63, 9×9는 1~99 중에서 골라요.</li>
+        <li>방장이 빙고 종류(숫자빙고/주제빙고), 빙고판 크기, 부르는 방식을 정해요. 주제빙고는 방장이 주제를 정하고, 대포 없이 직접 부르기로만 해요.</li>
+        <li>각자 빙고판을 겹치지 않게 채우고 <b>준비 완료</b>를 눌러요. 숫자빙고는 3×3은 1~15, 5×5는 1~35, 7×7은 1~63, 9×9는 1~99 중에서, 주제빙고는 주제에 맞는 단어(12글자까지)를 직접 써요.</li>
         <li>모두 준비되면 방장이 시작해요. 차례는 무작위로 정해져요.</li>
         <li><b>직접 부르기</b>: 내 차례에 내 빙고판의 숫자를 눌러 불러요. 부른 칸은 자동으로 칠해져요.<br><b>대포</b>: 내 차례에 대포를 쏘면 아직 안 나온 숫자가 무작위로 나와요.</li>
-        <li>나온 숫자는 각자 직접 눌러서 칠해요. 칠하지 않은 칸은 빙고로 치지 않아요.</li>
+        <li>나온 숫자나 단어는 각자 직접 눌러서 칠해요. 칠하지 않은 칸은 빙고로 치지 않아요. 주제빙고에서 띄어쓰기·영문 대소문자만 다른 단어는 같은 단어로 봐요.</li>
         <li>판 크기만큼 줄을 완성하면(3×3은 3줄, 9×9는 9줄) <b>빙고</b> 버튼이 켜져요. 먼저 누른 순서대로 등수가 정해지고, 꼴찌가 나올 때까지 계속해요.</li>
         <li>등수가 정해진 사람의 차례는 건너뛰어요.</li>
         <li>대기실에서는 <b>관전하기</b>로 빠지거나 <b>참여하기</b>로 다시 들어올 수 있어요. 게임 중에 들어오면 관전으로 들어오고, 관전자는 모든 사람의 빙고판을 볼 수 있어요.</li>
