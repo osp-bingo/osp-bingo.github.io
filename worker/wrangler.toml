@@ -21,4 +21,4 @@ new_sqlite_classes = ["BingoRoom"]
 [vars]
 # 서버를 쓸 수 있는 웹 주소. 배포 때 GitHub Actions가 https://<계정>.github.io 를 덧붙인다.
 # https://localhost(안드로이드 앱), capacitor://localhost(iOS 앱)
-ALLOWED_ORIGINS = "https://bingo.ohsangplay.com,http://localhost,http://127.0.0.1,https://localhost,capacitor://localhost"
+ALLOWED_ORIGINS = "https://today-bingo.ohsangplay.com,http://localhost,http://127.0.0.1,https://localhost,capacitor://localhost"

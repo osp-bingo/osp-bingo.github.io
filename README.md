@@ -2,7 +2,7 @@
 
 친구들과 방 코드로 모여서 하는 온라인 빙고. 혼자 하기 없이 같이 하기만 있고, 로그인 없이 닉네임만 씁니다.
 
-- 웹: GitHub Pages (`web/`, 빌드 과정 없음)
+- 웹: https://today-bingo.ohsangplay.com (GitHub Pages, `web/`, 빌드 과정 없음)
 - 게임 서버: Cloudflare Workers + Durable Objects (`worker/`), 주소 `https://api.ohsangplay.com/bingo`
 
 ## 규칙
@@ -63,7 +63,7 @@ Worker 이름은 `bingo-api`, 경로는 `api.ohsangplay.com/bingo/*` 라서 야�
 
 ### 도메인 (선택)
 
-`bingo.ohsangplay.com` → Cloudflare DNS에 `CNAME bingo → <계정>.github.io` (프록시 끔), 저장소 Settings → Pages → Custom domain에 같은 주소. 이 주소는 이미 `ALLOWED_ORIGINS`에 들어 있습니다.
+웹 주소는 `https://today-bingo.ohsangplay.com` (Cloudflare DNS `CNAME today-bingo → osp-bingo.github.io`, 저장소 Settings → Pages → Custom domain). 이 주소는 `ALLOWED_ORIGINS`에 들어 있습니다.
 
 ## 로컬 실행
 
