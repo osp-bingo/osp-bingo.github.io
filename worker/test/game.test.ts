@@ -11,6 +11,7 @@ import {
   fire,
   join,
   leave,
+  unmark,
   play,
   spectate,
   mark,
@@ -401,7 +402,22 @@ describe('주제빙고', () => {
     expect(s.players[1].marked[8]).toBe(false);
     mark(s, b, 8, T);
     expect(s.players[1].marked[8]).toBe(true);
-    expect(() => mark(s, b, 0, T)).toThrow('나오지 않은 단어');
+    // 나온 단어 수(1개)보다 많이 칠할 수는 없음
+    expect(() => mark(s, b, 0, T)).toThrow('더 칠할 수 없어요');
+  });
+
+  it('같은 단어인지는 각자 판단: 글자가 달라도 칠하고, 잘못 칠하면 지움', () => {
+    const { s, a, b } = topicRoom();
+    callNumber(s, a, '망고', T);
+    mark(s, b, 0, T); // '바나나'를 망고로 판단해서 칠함
+    expect(s.players[1].marked[0]).toBe(true);
+    unmark(s, b, 0, T);
+    expect(s.players[1].marked[0]).toBe(false);
+    // 부른 사람 자신의 칸(나온 단어와 같은 글자)은 지울 수 없음
+    expect(() => unmark(s, a, 7, T)).toThrow('지울 수 없어요');
+    // 칠한 칸은 부를 수 없음
+    mark(s, b, 1, T); // '체리'
+    expect(() => callNumber(s, b, '체리', T)).toThrow('칠한 칸');
   });
 
   it('띄어쓰기가 달라도 같은 단어로 칠할 수 있음', () => {
@@ -432,5 +448,15 @@ describe('주제빙고', () => {
     changeSettings(s, a, { topic: '동물' }, T);
     expect(s.players[0]).toMatchObject({ board: null, ready: false });
     expect(() => ready(s, a, boardA, T)).toThrow();
+  });
+});
+
+describe('게임이 끝나면 모든 빙고판 공개', () => {
+  it('끝나기 전엔 참여자에게 안 보이고, 끝나면 모두에게', () => {
+    const { s, ids } = setup();
+    expect(viewFor(s, ids[0], T).boards).toBeNull();
+    leave(s, ids[1], T);
+    expect(s.phase).toBe('finished');
+    expect(viewFor(s, ids[0], T).boards!.map((b) => b.board)).toEqual([boardA, boardB]);
   });
 });

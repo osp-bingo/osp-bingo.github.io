@@ -15,6 +15,7 @@ import {
   mark,
   nextWake,
   parseSettings,
+  unmark,
   play,
   spectate,
   ready,
@@ -212,6 +213,9 @@ export class BingoRoom extends DurableObject<Env> {
           break;
         case 'mark':
           mark(state, id, data.cell, now);
+          break;
+        case 'unmark':
+          unmark(state, id, data.cell, now);
           break;
         case 'bingo':
           bingo(state, id, now);

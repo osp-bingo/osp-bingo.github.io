@@ -325,7 +325,10 @@ function active(p: Player): boolean {
 /** 이 사람이 지금 부를 수 있는 숫자들 */
 function callable(state: RoomState, p: Player): Cell[] {
   const called = calledKeys(state);
-  if (state.settings.callMode === 'player') return (p.board ?? []).filter((v) => !called.has(keyOf(state, v)));
+  if (state.settings.callMode === 'player') {
+    // 주제빙고는 이미 칠한 칸(다른 사람이 부른 비슷한 단어로 판단해 칠한 칸)도 부를 수 없다
+    return (p.board ?? []).filter((v, i) => !called.has(keyOf(state, v)) && !(isTopic(state) && p.marked[i]));
+  }
   const out: number[] = [];
   for (let n = 1; n <= MAX_NUMBER[state.settings.size]; n++) if (!called.has(n)) out.push(n);
   return out;
@@ -379,6 +382,7 @@ export function callNumber(state: RoomState, id: string, number: unknown, now: n
   const value = p.board?.find((v) => (typeof number === typeof v) && keyOf(state, v) === keyOf(state, number as Cell));
   if (value === undefined) throw new RoomError(`내 빙고판에 있는 ${what}만 부를 수 있어요`);
   if (calledKeys(state).has(keyOf(state, value))) throw new RoomError(`이미 나온 ${what}예요`);
+  if (isTopic(state) && p.marked[p.board!.indexOf(value)]) throw new RoomError('이미 칠한 칸은 부를 수 없어요');
   announce(state, value, p, false, now);
   advanceTurn(state, now);
   state.updatedAt = now;
@@ -401,10 +405,30 @@ export function mark(state: RoomState, id: string, cell: unknown, now: number): 
   if (state.phase !== 'playing' || !state.game || !p.board) throw new RoomError('게임 중이 아니에요');
   if (typeof cell !== 'number' || !Number.isInteger(cell) || cell < 0 || cell >= p.board.length) return;
   if (p.marked[cell]) return;
-  if (!calledKeys(state).has(keyOf(state, p.board[cell]))) {
-    throw new RoomError(isTopic(state) ? '아직 나오지 않은 단어예요' : '아직 나오지 않은 숫자예요');
+  if (isTopic(state)) {
+    // 주제빙고: 같은 단어인지는 각자 판단해서 칠한다. 다만 나온 단어 수보다 많이 칠할 수는 없다.
+    if (p.rank !== null) return;
+    const g = state.game;
+    if (g.called.length === 0) throw new RoomError('아직 나온 단어가 없어요');
+    if (p.marked.filter(Boolean).length >= g.called.length) {
+      throw new RoomError(`지금까지 나온 단어가 ${g.called.length}개라 더 칠할 수 없어요`);
+    }
+  } else if (!calledKeys(state).has(keyOf(state, p.board[cell]))) {
+    throw new RoomError('아직 나오지 않은 숫자예요');
   }
   p.marked[cell] = true;
+  state.updatedAt = now;
+}
+
+/** 주제빙고: 잘못 칠한 칸 지우기 (나온 단어와 글자가 똑같은 칸은 지울 수 없다) */
+export function unmark(state: RoomState, id: string, cell: unknown, now: number): void {
+  const p = need(state, id);
+  if (p.spectator || !isTopic(state)) return;
+  if (state.phase !== 'playing' || !state.game || !p.board) throw new RoomError('게임 중이 아니에요');
+  if (typeof cell !== 'number' || !Number.isInteger(cell) || cell < 0 || cell >= p.board.length) return;
+  if (!p.marked[cell] || p.rank !== null) return;
+  if (calledKeys(state).has(keyOf(state, p.board[cell]))) throw new RoomError('나온 단어와 같은 칸은 지울 수 없어요');
+  p.marked[cell] = false;
   state.updatedAt = now;
 }
 
@@ -557,9 +581,9 @@ export function viewFor(state: RoomState, id: string | null, now: number) {
       me && !me.left
         ? { board: me.board, marked: me.marked, ready: me.ready, rank: me.rank, spectator: !!me.spectator }
         : null,
-    /** 관전자에게만: 게임 중인 모든 사람의 빙고판 */
+    /** 모든 사람의 빙고판: 관전자는 게임 중에도, 게임이 끝나면 모두에게 공개 */
     boards:
-      me && !me.left && me.spectator && state.phase !== 'lobby'
+      (me && !me.left && me.spectator && state.phase !== 'lobby') || state.phase === 'finished'
         ? state.players
             .filter((p) => !p.spectator && p.board && state.game?.order.includes(p.id))
             .map((p) => ({ id: p.id, board: p.board, marked: p.marked }))

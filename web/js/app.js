@@ -484,7 +484,7 @@ function renderPlayers(v) {
 
 /** 관전자만, 게임 중에 그 사람 빙고판을 받았을 때 크게 볼 수 있다 */
 function canPeek(v, id) {
-  return !!v.my?.spectator && v.phase !== 'lobby' && !!v.boards?.some((b) => b.id === id);
+  return v.phase !== 'lobby' && !!v.boards?.some((b) => b.id === id);
 }
 
 let peekId = null;
@@ -559,8 +559,9 @@ function renderWatchers(v) {
 /** 관전자: 게임 중인 모든 사람의 빙고판 */
 function renderWatch(v) {
   const wrap = $('watch-wrap');
-  wrap.hidden = !(v.my?.spectator && v.phase !== 'lobby' && v.boards);
+  wrap.hidden = !(v.phase !== 'lobby' && v.boards);
   if (wrap.hidden) return;
+  $('watch-title').hidden = v.phase !== 'finished';
   const size = v.settings.size;
   const lastKey = v.phase === 'playing' && v.game?.lastCall ? keyFor(v, v.game.lastCall.number) : undefined;
   const order = v.game?.order ?? [];
@@ -624,7 +625,9 @@ function renderCaller(v) {
   const where = $('caller-where');
   where.hidden = !last || v.phase !== 'playing' || !!v.my?.rank || !!v.my?.spectator;
   where.className = `caller-where ${onMyBoard ? 'yes' : 'no'}`;
-  where.textContent = onMyBoard ? '내 판에 있어요' : '내 판에 없어요';
+  where.textContent = onMyBoard ? (isTopic(v) ? '같은 단어가 내 판에 있어요' : '내 판에 있어요') : '내 판에 없어요';
+  // 주제빙고는 비슷한 단어도 있을 수 있어서 '없어요'는 띄우지 않는다
+  if (isTopic(v) && !onMyBoard) where.hidden = true;
 
   const turnEl = $('caller-turn');
   const mine = v.phase === 'playing' && g.turn === v.me;
@@ -722,8 +725,13 @@ function onBoardClick(e) {
   }
   if (v.phase !== 'playing' || !v.my?.board) return;
   const n = v.my.board[i];
-  if (v.my.marked[i]) return;
   const called = !!v.game?.called.some((x) => keyFor(v, x) === keyFor(v, n));
+  // 주제빙고: 글자가 똑같으면 바로 칠하고, 아니면 칠할지·부를지 고르는 메뉴
+  if (isTopic(v) && !(called && !v.my.marked[i])) {
+    if (!v.my.rank) openCellMenu(i);
+    return;
+  }
+  if (v.my.marked[i]) return;
   if (called) {
     // 바로 칠해 보이고 서버에도 보낸다
     v.my.marked[i] = true;
@@ -738,6 +746,75 @@ function onBoardClick(e) {
     return;
   }
   toast(isTopic(v) ? '아직 나오지 않은 단어예요' : '아직 나오지 않은 숫자예요');
+}
+
+/** 주제빙고 칸 메뉴: 칠하기(같은 단어라고 판단) / 이 단어 부르기 / 잘못 칠한 칸 지우기 */
+function openCellMenu(i) {
+  const v = view;
+  if (!v?.my?.board || !conn) return;
+  const word = String(v.my.board[i]);
+  const called = v.game?.called ?? [];
+  const exact = called.some((x) => wordKey(x) === wordKey(word));
+  const marked = v.my.marked[i];
+  const markedCount = v.my.marked.filter(Boolean).length;
+  const myTurn = v.game?.turn === v.me;
+  const dialog = /** @type {HTMLDialogElement} */ ($('cell-dialog'));
+  const close = () => dialog.close();
+  const last = v.game?.lastCall;
+  $('cell-word').textContent = word;
+  $('cell-note').textContent = marked
+    ? '칠한 칸이에요. 잘못 칠했으면 지울 수 있어요.'
+    : called.length === 0
+      ? '아직 나온 단어가 없어요.'
+      : `방금 나온 단어: ${last ? last.number : ''}. 나온 단어와 같다고 생각되면 칠해요.`;
+  const actions = [];
+  if (marked) {
+    actions.push(
+      el('button', {
+        class: 'btn btn-ghost',
+        text: '지우기',
+        disabled: exact,
+        onclick: () => {
+          v.my.marked[i] = false;
+          conn?.send({ type: 'unmark', cell: i });
+          close();
+          render();
+        },
+      }),
+    );
+  } else {
+    const full = markedCount >= called.length;
+    actions.push(
+      el('button', {
+        class: 'btn btn-go',
+        text: called.length === 0 ? '칠하기' : full ? `칠하기 (나온 단어 ${called.length}개까지)` : '칠하기',
+        disabled: called.length === 0 || full,
+        onclick: () => {
+          v.my.marked[i] = true;
+          stampCell = i;
+          buzz(15);
+          conn?.send({ type: 'mark', cell: i });
+          close();
+          render();
+        },
+      }),
+    );
+    if (myTurn && !exact) {
+      actions.push(
+        el('button', {
+          class: 'btn btn-primary',
+          text: '이 단어 부르기',
+          onclick: () => {
+            conn?.send({ type: 'call', number: word });
+            close();
+          },
+        }),
+      );
+    }
+  }
+  actions.push(el('button', { class: 'btn btn-ghost', text: '닫기', onclick: close }));
+  $('cell-actions').replaceChildren(...actions);
+  if (!dialog.open) dialog.showModal();
 }
 
 function renderPicker(v) {
@@ -813,6 +890,7 @@ function renderHistory(v) {
   const called = v.game.called;
   $('history-count').textContent = isTopic(v) ? `${called.length}개` : `${called.length} / ${v.maxNumber}`;
   $('history').classList.toggle('words', isTopic(v));
+  $('history-label').textContent = isTopic(v) ? '나온 단어' : '나온 숫자';
   $('history').replaceChildren(
     ...called.map((n, i) => el('li', { class: i === called.length - 1 ? 'last' : '', text: String(n) })),
   );
@@ -910,10 +988,14 @@ function renderHint(v) {
     }
     else if (v.hostId === v.me) text = '모두 준비 완료하면 게임을 시작할 수 있어요.';
     else text = '준비 완료! 방장이 시작하길 기다려요.';
+  } else if (v.phase === 'finished') {
+    text = '게임이 끝났어요. 아래에서 모든 사람의 빙고판을 볼 수 있어요.';
   } else if (v.phase === 'playing') {
     text = v.my?.rank
       ? '등수가 정해졌어요. 다른 사람이 끝날 때까지 지켜봐요.'
-      : `${isTopic(v) ? '단어' : '숫자'}가 나오면 내 빙고판에서 직접 눌러 칠해요. 칠하지 않은 칸은 빙고가 아니에요.`;
+      : isTopic(v)
+        ? '단어가 나오면 같다고 생각되는 칸을 눌러 칠해요. 같은지는 각자 판단하고, 잘못 칠한 칸은 다시 눌러 지울 수 있어요.'
+        : '숫자가 나오면 내 빙고판에서 직접 눌러 칠해요. 칠하지 않은 칸은 빙고가 아니에요.';
   }
   $('hint').textContent = text;
 }

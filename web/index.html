@@ -95,6 +95,7 @@
 
     <!-- 관전자: 모든 사람의 빙고판 -->
     <section id="watch-wrap" hidden>
+      <h3 class="history-title" id="watch-title" hidden>모든 빙고판 <span>눌러서 크게 보기</span></h3>
       <div class="watch-grid" id="watch-grid"></div>
     </section>
 
@@ -115,7 +116,7 @@
     </section>
 
     <section id="history-wrap" hidden>
-      <h3 class="history-title">나온 숫자 <span id="history-count"></span></h3>
+      <h3 class="history-title"><b id="history-label">나온 숫자</b> <span id="history-count"></span></h3>
       <ol class="history" id="history"></ol>
     </section>
 
@@ -150,6 +151,15 @@
     </div>
   </dialog>
 
+  <!-- 주제빙고: 칸 메뉴 -->
+  <dialog id="cell-dialog" class="dialog">
+    <div class="dialog-body">
+      <h2 id="cell-word"></h2>
+      <p class="dialog-note" id="cell-note"></p>
+      <div class="cell-actions" id="cell-actions"></div>
+    </div>
+  </dialog>
+
   <!-- 결과 -->
   <dialog id="result-dialog" class="dialog">
     <div class="dialog-body">
@@ -168,7 +178,8 @@
         <li>각자 빙고판을 겹치지 않게 채우고 <b>준비 완료</b>를 눌러요. 숫자빙고는 3×3은 1~15, 5×5는 1~35, 7×7은 1~63, 9×9는 1~99 중에서, 주제빙고는 주제에 맞는 단어(12글자까지)를 직접 써요.</li>
         <li>모두 준비되면 방장이 시작해요. 차례는 무작위로 정해져요.</li>
         <li><b>직접 부르기</b>: 내 차례에 내 빙고판의 숫자를 눌러 불러요. 부른 칸은 자동으로 칠해져요.<br><b>대포</b>: 내 차례에 대포를 쏘면 아직 안 나온 숫자가 무작위로 나와요.</li>
-        <li>나온 숫자나 단어는 각자 직접 눌러서 칠해요. 칠하지 않은 칸은 빙고로 치지 않아요. 주제빙고에서 띄어쓰기·영문 대소문자만 다른 단어는 같은 단어로 봐요.</li>
+        <li>나온 숫자나 단어는 각자 직접 눌러서 칠해요. 칠하지 않은 칸은 빙고로 치지 않아요. 주제빙고는 같은 단어인지 각자 판단해서 칠하고(나온 단어 수까지), 잘못 칠한 칸은 지울 수 있어요.</li>
+        <li>게임이 끝나면 모든 사람의 빙고판이 공개돼요.</li>
         <li>판 크기만큼 줄을 완성하면(3×3은 3줄, 9×9는 9줄) <b>빙고</b> 버튼이 켜져요. 먼저 누른 순서대로 등수가 정해지고, 꼴찌가 나올 때까지 계속해요.</li>
         <li>등수가 정해진 사람의 차례는 건너뛰어요.</li>
         <li>대기실에서는 <b>관전하기</b>로 빠지거나 <b>참여하기</b>로 다시 들어올 수 있어요. 게임 중에 들어오면 관전으로 들어오고, 관전자는 모든 사람의 빙고판을 볼 수 있어요.</li>

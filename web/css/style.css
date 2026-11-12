@@ -260,6 +260,12 @@ button { font: inherit; color: inherit; }
 .word-row input:focus { outline: 3px solid var(--ball); }
 .word-row .btn { flex: none; }
 
+/* 칸 메뉴 */
+#cell-word { font-size: 26px; word-break: keep-all; }
+.cell-actions { display: flex; flex-direction: column; gap: 8px; }
+.cell-actions .btn { width: 100%; }
+#watch-title { margin-top: 20px; }
+
 /* 크게 보기 */
 .mini, .player.peekable { cursor: pointer; }
 .mini:hover, .mini:focus-visible { border-color: rgba(255,210,63,.6); }
