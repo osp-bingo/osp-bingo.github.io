@@ -167,6 +167,9 @@ button { font: inherit; color: inherit; }
 @keyframes blast { 0% { transform: scale(.2); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
 .caller-text { flex: 1; min-width: 0; }
 .caller-who { margin: 0; font-size: 14px; opacity: .85; }
+.caller-where { display: inline-block; margin: 2px 0 4px; padding: 1px 10px; border-radius: 999px; font-size: 13px; font-weight: 800; }
+.caller-where.yes { background: var(--ball); color: var(--ink); }
+.caller-where.no { background: rgba(255,255,255,.14); color: #fff; }
 .caller-turn { margin: 0 0 6px; font-weight: 800; font-size: 16px; }
 .caller-turn.mine { color: var(--ball); }
 .timer { height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
@@ -210,8 +213,11 @@ button { font: inherit; color: inherit; }
 }
 .cell.empty { color: var(--ink-soft); font-family: var(--body); font-size: 12px; }
 .cell.selected { box-shadow: inset 0 0 0 3px var(--table); background: #eef1ff; }
-.cell.callable { box-shadow: inset 0 0 0 2px var(--ball-deep); }
+.cell.callable { box-shadow: inset 0 0 0 2px rgba(36,64,196,.4); }
 .cell.in-line { background: #ffe1ee; }
+/* 방금 나온 숫자: 노란 테두리가 깜빡여서 어디 있는지 바로 보인다 */
+.cell.hot { background: var(--ball); box-shadow: inset 0 0 0 3px var(--ball-deep); z-index: 3; animation: hot 1s ease-in-out infinite; }
+@keyframes hot { 50% { box-shadow: inset 0 0 0 3px var(--ball-deep), 0 0 0 4px rgba(255,210,63,.75); } }
 .cell span { position: relative; z-index: 1; }
 /* 도장: 반투명 마젠타 잉크가 숫자 위에 */
 .cell.marked::after {

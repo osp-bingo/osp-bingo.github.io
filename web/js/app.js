@@ -393,6 +393,12 @@ function renderCaller(v) {
       : last.auto
         ? `${who}님 시간이 지나 자동으로 불렀어요`
         : `${who}님이 불렀어요`;
+  // 방금 나온 숫자가 내 판에 있는지 바로 알 수 있게
+  const onMyBoard = !!last && !!v.my?.board?.includes(last.number);
+  const where = $('caller-where');
+  where.hidden = !last || v.phase !== 'playing' || !!v.my?.rank;
+  where.className = `caller-where ${onMyBoard ? 'yes' : 'no'}`;
+  where.textContent = onMyBoard ? '내 판에 있어요' : '내 판에 없어요';
 
   const turnEl = $('caller-turn');
   const mine = v.phase === 'playing' && g.turn === v.me;
@@ -428,6 +434,8 @@ function renderBoard(v) {
   const inLine = new Set(lobby ? [] : completedLines(marked, size).flat());
   const called = new Set(v.game?.called ?? []);
   const myTurnToCall = v.phase === 'playing' && v.game?.turn === v.me && v.settings.callMode === 'player';
+  // 방금 나온 숫자가 내 판에 있으면 그 칸을 표시 (칠할 때까지)
+  const lastNum = v.phase === 'playing' ? v.game?.lastCall?.number : undefined;
   const cells = draft.cells;
 
   const nodes = cells.map((n, i) => {
@@ -438,6 +446,7 @@ function renderBoard(v) {
     if (!lobby && marked[i] && i === stampCell) cls.push('stamp');
     if (inLine.has(i)) cls.push('in-line');
     if (myTurnToCall && n && !called.has(n)) cls.push('callable');
+    if (n && n === lastNum && !marked[i]) cls.push('hot');
     return el(
       'button',
       { class: cls.join(' '), 'data-i': i, role: 'gridcell', 'aria-label': n ? `${n}${marked[i] ? ', 칠함' : ''}` : '빈 칸' },
