@@ -162,9 +162,7 @@ button { font: inherit; color: inherit; }
   font-family: var(--num); font-size: 26px; line-height: 1;
 }
 .ball.drop { animation: drop .55s cubic-bezier(.3,1.6,.5,1); }
-.ball.cannon { animation: blast .6s ease-out; }
 @keyframes drop { from { transform: translateY(-40px) rotate(-90deg); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes blast { 0% { transform: scale(.2); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
 .caller-text { flex: 1; min-width: 0; }
 .caller-who { margin: 0; font-size: 14px; opacity: .85; }
 .caller-where { display: inline-block; margin: 2px 0 4px; padding: 1px 10px; border-radius: 999px; font-size: 13px; font-weight: 800; }
@@ -174,7 +172,8 @@ button { font: inherit; color: inherit; }
 .caller-turn.mine { color: var(--ball); }
 .timer { height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
 .timer i { display: block; height: 100%; width: 100%; background: var(--ball); transform-origin: left; }
-.btn-cannon { flex: none; background: var(--dauber); color: #fff; box-shadow: 0 4px 0 #a5155a; padding: 14px 16px; }
+.caller { flex-wrap: wrap; }
+.btn-cannon { flex: 1 0 100%; background: var(--dauber); color: #fff; box-shadow: 0 4px 0 #a5155a; padding: 14px 16px; }
 
 /* 참가자 */
 .players { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -303,6 +302,72 @@ button { font: inherit; color: inherit; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.big { background: var(--dauber); font-size: 18px; }
+
+/* ------------------------------------------------ 대포 발사 레이어 */
+.shot {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(16, 22, 70, .62);
+  display: grid; place-items: center;
+  animation: shot-in .18s ease-out;
+}
+.shot.out { animation: shot-out .3s ease-in forwards; }
+@keyframes shot-in { from { opacity: 0; } }
+@keyframes shot-out { to { opacity: 0; } }
+.shot-stage { position: relative; width: min(92vw, 440px); height: min(78vh, 560px); }
+.shot-cannon {
+  position: absolute; left: 0; bottom: 0; width: 120px;
+  transform-origin: 40% 70%;
+  animation: recoil .45s ease-out;
+}
+.shot-barrel { transform-origin: 42px 52px; transform: rotate(-38deg); }
+@keyframes recoil { 0% { transform: translate(0,0); } 18% { transform: translate(-14px, 8px); } 100% { transform: none; } }
+.shot-puff {
+  position: absolute; left: 70px; bottom: 92px; width: 70px; height: 70px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 30%, rgba(255,255,255,.5) 55%, transparent 70%);
+  opacity: 0; animation: puff .6s ease-out;
+}
+@keyframes puff { 0% { opacity: .95; transform: scale(.3); } 100% { opacity: 0; transform: scale(2.2) translate(10px,-10px); } }
+.shot-sfx {
+  position: absolute; left: 110px; bottom: 150px; margin: 0;
+  font-family: var(--num); font-size: 34px; color: var(--ball);
+  text-shadow: 0 3px 0 var(--table-deep);
+  opacity: 0; animation: sfx .9s ease-out;
+}
+@keyframes sfx { 0% { opacity: 0; transform: scale(.5) rotate(-12deg); } 20% { opacity: 1; transform: scale(1.15) rotate(-8deg); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px) rotate(-8deg); } }
+/* 공: 화면 가운데가 도착점. 대포 입구(왼쪽 아래)에서 포물선으로 날아온다 */
+.shot-ball {
+  position: absolute; left: 50%; top: 42%;
+  width: 168px; height: 168px; margin: -84px 0 0 -84px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: radial-gradient(circle at 34% 28%, #fff 0 13%, var(--ball) 14%);
+  box-shadow: inset 0 -10px 0 var(--ball-deep), 0 16px 30px rgba(0,0,0,.35);
+  --sx: calc(96px - min(92vw, 440px) / 2);
+  --sy: calc(min(78vh, 560px) * .58 - 66px);
+  animation: fly .8s cubic-bezier(.2,.5,.4,1) both;
+}
+.shot-ball span {
+  width: 104px; height: 104px; border-radius: 50%; background: #fff; color: var(--ink);
+  display: grid; place-items: center; font-family: var(--num); font-size: 60px; line-height: 1;
+  animation: num-pop .35s .7s cubic-bezier(.3,1.7,.5,1) both;
+}
+/* 출발점 = 대포 입구 (무대 왼쪽 아래). 무대 가운데 위쪽이 도착점 */
+@keyframes fly {
+  0%   { transform: translate(var(--sx), var(--sy)) scale(.16) rotate(-240deg); }
+  50%  { transform: translate(calc(var(--sx) * .45), -150px) scale(.6) rotate(-80deg); }
+  86%  { transform: translate(0, 0) scale(1.08) rotate(6deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(0); }
+}
+@keyframes num-pop { from { transform: scale(0); } to { transform: scale(1); } }
+.shot-caption {
+  position: absolute; left: 0; right: 0; top: calc(42% + 100px); margin: 0;
+  text-align: center; font-weight: 800; font-size: 17px; line-height: 1.5;
+  animation: shot-in .25s .8s both;
+}
+.shot-caption b {
+  display: inline-block; margin-top: 6px; padding: 2px 12px; border-radius: 999px; font-size: 15px;
+}
+.shot-caption b.yes { background: var(--ball); color: var(--ink); }
+.shot-caption b.no { background: rgba(255,255,255,.18); color: #fff; }
 
 @media (min-width: 560px) {
   .board.size-3 { --cell-fs: 52px; }

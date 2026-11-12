@@ -243,6 +243,7 @@ function exitRoom(sendLeave = true) {
   view = null;
   clearInterval(timerHandle);
   for (const d of document.querySelectorAll('dialog')) /** @type {HTMLDialogElement} */ (d).close();
+  $('shot').hidden = true;
   history.replaceState(null, '', location.pathname);
   $('resume').hidden = true;
   show('home');
@@ -280,16 +281,51 @@ function onState(v) {
   render();
 }
 
+let shotTimer = 0;
+/** 대포 발사 레이어: 반투명 배경 위로 공이 날아와 숫자가 뜬다. 잠시 뒤(또는 누르면) 닫힌다. */
+function showShot(call, onMyBoard) {
+  const layer = $('shot');
+  clearTimeout(shotTimer);
+  layer.hidden = true;
+  layer.classList.remove('out');
+  $('shot-num').textContent = String(call.number);
+  const caption = $('shot-caption');
+  caption.replaceChildren(
+    call.auto ? `${call.byName ?? ''}님 시간이 지나 대포가 자동 발사!` : `${call.byName ?? ''}님의 대포!`,
+    el('br'),
+    el('b', { class: onMyBoard ? 'yes' : 'no', text: onMyBoard ? '내 판에 있어요' : '내 판에 없어요' }),
+  );
+  void layer.offsetWidth;
+  layer.hidden = false; // 다시 보이면서 애니메이션이 처음부터
+  const close = () => {
+    clearTimeout(shotTimer);
+    layer.classList.add('out');
+    shotTimer = setTimeout(() => {
+      layer.hidden = true;
+      layer.classList.remove('out');
+    }, 300);
+  };
+  layer.onclick = close;
+  shotTimer = setTimeout(close, 2200);
+}
+
 /** 상태가 바뀐 순간의 알림: 새 숫자, 등수, 내 차례, 게임 끝 */
 function announce(a, b) {
   if (!a || a.code !== b.code) return;
   const newCall = b.game && (!a.game || b.game.called.length > a.game.called.length || a.round !== b.round);
   if (newCall && b.game.lastCall) {
-    const ball = $('ball');
-    ball.classList.remove('drop', 'cannon');
-    void ball.offsetWidth;
-    ball.classList.add(b.game.lastCall.how === 'cannon' ? 'cannon' : 'drop');
-    buzz(25);
+    const last = b.game.lastCall;
+    if (last.how === 'cannon') {
+      // 대포는 빙고판 위 레이어에서 공이 날아온다
+      showShot(last, !!b.my?.board?.includes(last.number) && !b.my?.rank);
+      buzz([20, 40, 60]);
+    } else {
+      const ball = $('ball');
+      ball.classList.remove('drop');
+      void ball.offsetWidth;
+      ball.classList.add('drop');
+      buzz(25);
+    }
   }
   if (b.phase !== 'lobby' && a.round === b.round) {
     for (const p of b.players) {

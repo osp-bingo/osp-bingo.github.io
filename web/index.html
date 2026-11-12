@@ -150,6 +150,26 @@
     </form>
   </dialog>
 
+  <!-- 대포 발사 레이어 -->
+  <div class="shot" id="shot" hidden>
+    <div class="shot-stage">
+      <svg class="shot-cannon" viewBox="0 0 120 90" aria-hidden="true">
+        <g class="shot-barrel">
+          <rect x="30" y="22" width="78" height="30" rx="12" fill="#161b46"/>
+          <rect x="92" y="18" width="16" height="38" rx="6" fill="#161b46"/>
+          <rect x="52" y="22" width="9" height="30" fill="#ffd23f"/>
+        </g>
+        <circle cx="42" cy="62" r="20" fill="#e8287f"/>
+        <circle cx="42" cy="62" r="8" fill="#161b46"/>
+        <rect x="8" y="78" width="84" height="8" rx="4" fill="#161b46"/>
+      </svg>
+      <span class="shot-puff" aria-hidden="true"></span>
+      <p class="shot-sfx" aria-hidden="true">피융!</p>
+      <div class="shot-ball"><span id="shot-num"></span></div>
+      <p class="shot-caption" id="shot-caption"></p>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
