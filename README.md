@@ -23,6 +23,7 @@
 - 꼴찌가 나올 때까지 계속. 등수가 정해진 사람과 부를 숫자가 남지 않은 사람은 차례를 건너뜀
 - 더 나올 숫자가 없으면 60초 동안 빙고를 기다린 뒤, 남은 사람은 칠한 줄 수로 등수 (같으면 공동)
 - 게임 중 나가기 = 기권 (등수 없음). 남은 사람이 한 명이면 그 사람이 꼴찌로 끝남
+- 관전: 대기실에서 **관전하기**/**참여하기**로 오감 (관전하면 준비가 풀림). 게임 중에 들어오거나 참여 자리(8명)가 꽉 차면 관전으로 들어옴 (관전은 30명까지). 관전자는 게임 중 모든 사람의 빙고판을 봄. 게임 중 오래(90초) 끊긴 관전자는 정리
 - 끝나면 방장이 **다시 하기** → 같은 방 대기실로 (빙고판은 남고 준비만 풀림)
 - 새로고침하거나 연결이 끊겨도 같은 자리로 다시 들어감. 대기실에서 90초 넘게 끊겨 있으면 자리가 빠짐
 - 다른 사람의 빙고판 숫자는 서버가 보내지 않음 (줄 수만 보임)
@@ -30,7 +31,7 @@
 | API | 설명 |
 | --- | --- |
 | `POST /api/rooms` | `{kind: "number", size: 3\|5\|7\|9, callMode: "player"\|"cannon"}` → `{code}` |
-| `GET /api/rooms/{code}/ws?name=닉네임[&playerId=…]` | 방 WebSocket. 서버 → `welcome`, `state`, `error` / 웹 → `settings`, `ready`, `unready`, `start`, `call`, `fire`, `mark`, `bingo`, `rematch`, `leave` |
+| `GET /api/rooms/{code}/ws?name=닉네임[&playerId=…]` | 방 WebSocket. 서버 → `welcome`, `state`, `error` / 웹 → `settings`, `ready`, `unready`, `spectate`, `play`, `start`, `call`, `fire`, `mark`, `bingo`, `rematch`, `leave` |
 | `GET /api/health` | 상태 확인 |
 
 ## 구조

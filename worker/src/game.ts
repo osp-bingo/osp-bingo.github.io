@@ -36,6 +36,8 @@ export interface Player {
   rank: number | null;
   /** 게임 중에 나감 (기권) */
   left: boolean;
+  /** 관전자: 빙고판 없이 보기만 한다 (예전 저장 상태엔 없을 수 있음) */
+  spectator?: boolean;
 }
 
 export interface Call {
@@ -80,6 +82,9 @@ export const EXHAUSTED_WAIT_MS = 60_000;
 /** 대기실에서 연결이 끊긴 채 이 시간이 지나면 자리를 비운다 */
 export const LOBBY_DROP_MS = 90_000;
 
+/** 관전자는 이만큼까지 */
+export const MAX_SPECTATORS = 30;
+
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 4;
 
@@ -122,14 +127,23 @@ function needHost(state: RoomState, id: string): Player {
   return p;
 }
 
+/** 게임에 참여하는 사람 (관전자·나간 사람 제외) */
+function isPlayer(p: Player): boolean {
+  return !p.left && !p.spectator;
+}
+
+function playerCount(state: RoomState): number {
+  return state.players.filter(isPlayer).length;
+}
+
 function emptyMarks(size: number): boolean[] {
   return Array.from({ length: size * size }, () => false);
 }
 
-/** 방장이 나가면 들어온 순서대로 다음 사람이 방장 */
+/** 방장이 나가면 들어온 순서대로 다음 사람이 방장 (참여자 먼저, 없으면 관전자) */
 function fixHost(state: RoomState): void {
   if (find(state, state.hostId) && !find(state, state.hostId)!.left) return;
-  state.hostId = state.players.find((p) => !p.left)?.id ?? null;
+  state.hostId = (state.players.find(isPlayer) ?? state.players.find((p) => !p.left))?.id ?? null;
 }
 
 export function isSeated(state: RoomState, id: string | null): boolean {
@@ -137,10 +151,13 @@ export function isSeated(state: RoomState, id: string | null): boolean {
   return !!p && !p.left;
 }
 
-/** 들어오기 (다시 연결이면 같은 자리). 참가자 id를 돌려준다. */
+/**
+ * 들어오기 (다시 연결이면 같은 자리). 참가자 id를 돌려준다.
+ * 게임 중이거나 자리가 꽉 찼으면 관전자로 들어온다. watch=true면 처음부터 관전.
+ */
 export function join(
   state: RoomState,
-  args: { playerId: string | null; name: string; newId: string },
+  args: { playerId: string | null; name: string; newId: string; watch?: boolean },
   now: number,
 ): string {
   const existing = find(state, args.playerId);
@@ -152,9 +169,11 @@ export function join(
   }
   const checked = checkNickname(args.name);
   if (!checked.ok) throw new RoomError(checked.error);
-  if (state.phase !== 'lobby') throw new RoomError('이미 게임이 시작된 방이에요');
-  if (state.players.length >= MAX_PLAYERS) throw new RoomError(`방이 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
-  if (state.players.some((p) => p.name === checked.name)) throw new RoomError('같은 닉네임이 이미 방에 있어요');
+  if (state.players.some((p) => !p.left && p.name === checked.name)) throw new RoomError('같은 닉네임이 이미 방에 있어요');
+  const spectator = !!args.watch || state.phase !== 'lobby' || playerCount(state) >= MAX_PLAYERS;
+  if (spectator && state.players.filter((p) => !p.left && p.spectator).length >= MAX_SPECTATORS) {
+    throw new RoomError('관전 자리도 꽉 찼어요');
+  }
   state.players.push({
     id: args.newId,
     name: checked.name,
@@ -165,6 +184,7 @@ export function join(
     marked: emptyMarks(state.settings.size),
     rank: null,
     left: false,
+    spectator,
   });
   fixHost(state);
   state.updatedAt = now;
@@ -204,6 +224,7 @@ export function changeSettings(state: RoomState, id: string, patch: unknown, now
 export function ready(state: RoomState, id: string, board: unknown, now: number): void {
   const p = need(state, id);
   if (state.phase !== 'lobby') throw new RoomError('지금은 준비할 수 없어요');
+  if (p.spectator) throw new RoomError('관전 중에는 준비할 수 없어요. 먼저 참여하기를 눌러 주세요');
   const err = checkBoard(board, state.settings.size);
   if (err) throw new RoomError(err);
   p.board = [...(board as number[])];
@@ -219,15 +240,37 @@ export function unready(state: RoomState, id: string, now: number): void {
   state.updatedAt = now;
 }
 
+/** 대기실에서 관전으로 빠지기 */
+export function spectate(state: RoomState, id: string, now: number): void {
+  const p = need(state, id);
+  if (state.phase !== 'lobby') throw new RoomError('대기실에서만 바꿀 수 있어요');
+  p.spectator = true;
+  p.ready = false;
+  state.updatedAt = now;
+}
+
+/** 대기실에서 관전하다가 참여하기 */
+export function play(state: RoomState, id: string, now: number): void {
+  const p = need(state, id);
+  if (state.phase !== 'lobby') throw new RoomError('게임이 끝나면 참여할 수 있어요');
+  if (!p.spectator) return;
+  if (playerCount(state) >= MAX_PLAYERS) throw new RoomError(`참여 자리가 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
+  p.spectator = false;
+  p.ready = false;
+  if (p.board && p.board.length !== state.settings.size ** 2) p.board = null;
+  p.marked = emptyMarks(state.settings.size);
+  state.updatedAt = now;
+}
+
 export function canStart(state: RoomState): boolean {
-  const seated = state.players.filter((p) => !p.left);
+  const seated = state.players.filter(isPlayer);
   return state.phase === 'lobby' && seated.length >= MIN_PLAYERS && seated.every((p) => p.ready && p.board);
 }
 
 export function start(state: RoomState, id: string, now: number, rand: () => number): void {
   needHost(state, id);
   if (state.phase !== 'lobby') throw new RoomError('이미 시작했어요');
-  const seated = state.players.filter((p) => !p.left);
+  const seated = state.players.filter(isPlayer);
   if (seated.length < MIN_PLAYERS) throw new RoomError(`${MIN_PLAYERS}명 이상 모여야 시작할 수 있어요`);
   if (!canStart(state)) throw new RoomError('모두 준비 완료해야 시작할 수 있어요');
   const order = seated.map((p) => p.id);
@@ -247,7 +290,7 @@ export function start(state: RoomState, id: string, now: number, rand: () => num
 }
 
 function active(p: Player): boolean {
-  return !p.left && p.rank === null;
+  return isPlayer(p) && p.rank === null;
 }
 
 /** 이 사람이 지금 부를 수 있는 숫자들 */
@@ -322,6 +365,7 @@ export function fire(state: RoomState, id: string, now: number, rand: () => numb
 /** 나온 숫자를 직접 색칠한다. 안 나온 숫자는 칠할 수 없다. */
 export function mark(state: RoomState, id: string, cell: unknown, now: number): void {
   const p = need(state, id);
+  if (p.spectator) return;
   if (state.phase !== 'playing' || !state.game || !p.board) throw new RoomError('게임 중이 아니에요');
   if (typeof cell !== 'number' || !Number.isInteger(cell) || cell < 0 || cell >= p.board.length) return;
   if (p.marked[cell]) return;
@@ -334,6 +378,7 @@ export function mark(state: RoomState, id: string, cell: unknown, now: number): 
 export function bingo(state: RoomState, id: string, now: number): void {
   const p = need(state, id);
   const g = state.game;
+  if (p.spectator) throw new RoomError('관전 중이에요');
   if (state.phase !== 'playing' || !g || !p.board) throw new RoomError('게임 중이 아니에요');
   if (p.rank !== null) return;
   const goal = goalLines(state.settings.size);
@@ -366,7 +411,7 @@ function finish(state: RoomState, now: number): void {
 export function leave(state: RoomState, id: string, now: number): void {
   const p = find(state, id);
   if (!p || p.left) return;
-  if (state.phase === 'lobby') {
+  if (state.phase === 'lobby' || p.spectator) {
     state.players = state.players.filter((x) => x.id !== id);
   } else {
     p.left = true;
@@ -401,16 +446,16 @@ export function rematch(state: RoomState, id: string, now: number): void {
  * 바뀐 게 있으면 true.
  */
 export function tick(state: RoomState, now: number, rand: () => number): boolean {
-  if (state.phase === 'lobby') {
-    const before = state.players.length;
-    state.players = state.players.filter(
-      (p) => p.connected || p.disconnectedAt === null || now - p.disconnectedAt < LOBBY_DROP_MS,
-    );
-    if (state.players.length === before) return false;
+  // 오래 끊긴 사람 정리: 대기실은 모두, 게임 중에는 관전자만
+  const gone = (p: Player) =>
+    (state.phase === 'lobby' || p.spectator) && !p.connected && p.disconnectedAt !== null && now - p.disconnectedAt >= LOBBY_DROP_MS;
+  if (state.players.some(gone)) {
+    state.players = state.players.filter((p) => !gone(p));
     fixHost(state);
     state.updatedAt = now;
     return true;
   }
+  if (state.phase === 'lobby') return false;
   const g = state.game;
   if (state.phase !== 'playing' || !g || g.deadline === null || now < g.deadline) return false;
 
@@ -439,17 +484,14 @@ export function tick(state: RoomState, now: number, rand: () => number): boolean
 
 /** 다음에 깨어나야 할 시각 (차례 마감, 대기실 정리) */
 export function nextWake(state: RoomState): number | null {
-  if (state.phase === 'playing') return state.game?.deadline ?? null;
-  if (state.phase === 'lobby') {
-    const times = state.players
-      .filter((p) => !p.connected && p.disconnectedAt !== null)
-      .map((p) => p.disconnectedAt! + LOBBY_DROP_MS);
-    return times.length ? Math.min(...times) : null;
-  }
-  return null;
+  const times = state.players
+    .filter((p) => (state.phase === 'lobby' || p.spectator) && !p.connected && p.disconnectedAt !== null)
+    .map((p) => p.disconnectedAt! + LOBBY_DROP_MS);
+  if (state.phase === 'playing' && state.game?.deadline != null) times.push(state.game.deadline);
+  return times.length ? Math.min(...times) : null;
 }
 
-/** 한 사람에게 보내는 화면 정보. 다른 사람의 빙고판 숫자는 보내지 않는다. */
+/** 한 사람에게 보내는 화면 정보. 참여자에게는 다른 사람의 빙고판 숫자를 보내지 않는다 (관전자만 전부 본다). */
 export function viewFor(state: RoomState, id: string | null, now: number) {
   const size = state.settings.size;
   const me = find(state, id);
@@ -473,10 +515,21 @@ export function viewFor(state: RoomState, id: string | null, now: number) {
       connected: p.connected,
       ready: p.ready,
       left: p.left,
+      spectator: !!p.spectator,
       rank: p.rank,
       lines: state.phase === 'lobby' ? null : lineCount(p.marked, size),
     })),
-    my: me && !me.left ? { board: me.board, marked: me.marked, ready: me.ready, rank: me.rank } : null,
+    my:
+      me && !me.left
+        ? { board: me.board, marked: me.marked, ready: me.ready, rank: me.rank, spectator: !!me.spectator }
+        : null,
+    /** 관전자에게만: 게임 중인 모든 사람의 빙고판 */
+    boards:
+      me && !me.left && me.spectator && state.phase !== 'lobby'
+        ? state.players
+            .filter((p) => !p.spectator && p.board && state.game?.order.includes(p.id))
+            .map((p) => ({ id: p.id, board: p.board, marked: p.marked }))
+        : null,
     game: g
       ? {
           order: g.order,

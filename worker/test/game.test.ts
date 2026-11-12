@@ -10,6 +10,8 @@ import {
   fire,
   join,
   leave,
+  play,
+  spectate,
   mark,
   ready,
   rematch,
@@ -92,7 +94,10 @@ describe('대기실', () => {
     expect(s.hostId).toBe('a');
     expect(() => join(s, { playerId: null, name: '가나', newId: 'b' }, T)).toThrow('같은 닉네임');
     for (let i = 0; i < 7; i++) join(s, { playerId: null, name: `손님${i}`, newId: `g${i}` }, T);
-    expect(() => join(s, { playerId: null, name: '늦음', newId: 'x' }, T)).toThrow('꽉 찼');
+    // 9번째는 관전으로
+    join(s, { playerId: null, name: '늦음', newId: 'x' }, T);
+    expect(s.players.find((p) => p.id === 'x')!.spectator).toBe(true);
+    expect(() => play(s, 'x', T)).toThrow('꽉 찼');
   });
 
   it('모두 준비해야 방장이 시작', () => {
@@ -137,9 +142,10 @@ describe('대기실', () => {
     expect(s.players).toHaveLength(0);
   });
 
-  it('게임 시작 후에는 새로 못 들어오고, 원래 사람은 다시 연결', () => {
+  it('게임 시작 후에 들어오면 관전, 원래 사람은 다시 연결', () => {
     const { s, ids } = setup();
-    expect(() => join(s, { playerId: null, name: '새손님', newId: 'z' }, T)).toThrow('시작된');
+    join(s, { playerId: null, name: '새손님', newId: 'z' }, T);
+    expect(s.players.find((p) => p.id === 'z')!.spectator).toBe(true);
     disconnect(s, ids[1], T);
     expect(join(s, { playerId: ids[1], name: '', newId: 'z' }, T)).toBe(ids[1]);
   });
@@ -295,5 +301,62 @@ describe('화면 정보', () => {
     expect(JSON.stringify(v.players)).not.toContain('"board"');
     expect(v.goal).toBe(3);
     expect(v.maxNumber).toBe(15);
+  });
+});
+
+describe('관전', () => {
+  it('대기실에서 관전으로 빠지면 준비가 풀리고 시작 인원에서 빠짐', () => {
+    const s = room();
+    const a = join(s, { playerId: null, name: '가나', newId: 'a' }, T);
+    const b = join(s, { playerId: null, name: '다라', newId: 'b' }, T);
+    const c = join(s, { playerId: null, name: '마바', newId: 'c', watch: true }, T);
+    expect(s.players[2].spectator).toBe(true);
+    ready(s, a, boardA, T);
+    ready(s, b, boardB, T);
+    expect(() => ready(s, c, boardC, T)).toThrow('관전');
+    start(s, a, T, keep);
+    expect(s.game!.order).toEqual([a, b]);
+  });
+
+  it('관전 ↔ 참여는 대기실에서만', () => {
+    const s = room();
+    const a = join(s, { playerId: null, name: '가나', newId: 'a' }, T);
+    const b = join(s, { playerId: null, name: '다라', newId: 'b' }, T);
+    ready(s, b, boardB, T);
+    spectate(s, b, T);
+    expect(s.players[1]).toMatchObject({ spectator: true, ready: false });
+    expect(() => start(s, a, T, keep)).toThrow('2명');
+    play(s, b, T);
+    expect(s.players[1].spectator).toBe(false);
+    expect(s.players[1].board).toEqual(boardB); // 빙고판은 남아 있음
+  });
+
+  it('관전자는 모든 빙고판을 보고, 참여자는 못 봄', () => {
+    const { s, ids } = setup();
+    join(s, { playerId: null, name: '구경꾼', newId: 'w' }, T);
+    const watcher = viewFor(s, 'w', T);
+    expect(watcher.boards!.map((b) => b.board)).toEqual([boardA, boardB]);
+    expect(viewFor(s, ids[0], T).boards).toBeNull();
+    expect(() => bingo(s, 'w', T)).toThrow('관전');
+  });
+
+  it('관전자가 나가도 게임은 그대로, 끝나도 관전자는 등수 없음', () => {
+    const { s, ids } = setup();
+    join(s, { playerId: null, name: '구경꾼', newId: 'w' }, T);
+    leave(s, 'w', T);
+    expect(s.players).toHaveLength(2);
+    expect(s.phase).toBe('playing');
+    join(s, { playerId: null, name: '구경꾼', newId: 'w2' }, T);
+    leave(s, ids[0], T);
+    expect(s.phase).toBe('finished');
+    expect(s.players.find((p) => p.id === 'w2')!.rank).toBeNull();
+  });
+
+  it('게임 중 오래 끊긴 관전자는 정리', () => {
+    const { s } = setup();
+    join(s, { playerId: null, name: '구경꾼', newId: 'w' }, T);
+    disconnect(s, 'w', T);
+    tick(s, T + LOBBY_DROP_MS, keep);
+    expect(s.players.some((p) => p.id === 'w')).toBe(false);
   });
 });

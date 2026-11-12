@@ -194,6 +194,37 @@ button { font: inherit; color: inherit; }
 .player .tag { opacity: .75; font-size: 12px; }
 .player.ranked .dot { background: var(--ball); color: var(--ink); }
 
+/* 관전 */
+.watchers { margin: -4px 0 12px; font-size: 13px; opacity: .85; }
+.watch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.mini {
+  background: var(--card); color: var(--ink); border-radius: 14px; padding: 8px;
+  box-shadow: 0 5px 0 var(--table-deep); border: 3px solid transparent;
+}
+.mini.turn { border-color: var(--ball); }
+.mini.off { opacity: .55; }
+.mini-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 800; padding: 0 2px 6px; }
+.mini-head span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-head .lines { font-family: var(--num); font-weight: 400; color: var(--dauber); white-space: nowrap; }
+.mini-head .lines.done { color: var(--go); }
+.mini-board { display: grid; gap: 2px; }
+.mini-cell {
+  position: relative; aspect-ratio: 1; border-radius: 4px; background: var(--card-soft);
+  display: grid; place-items: center; font-family: var(--num); font-size: var(--mini-fs, 13px); line-height: 1; overflow: hidden;
+}
+.mini-cell span { position: relative; z-index: 1; }
+.mini-cell.in-line { background: #ffe1ee; }
+.mini-cell.marked::after {
+  content: ''; position: absolute; inset: 8%; border-radius: 50%; z-index: 2; mix-blend-mode: multiply;
+  background: rgba(232,40,127,.72);
+}
+.mini-cell.hot { background: var(--ball); }
+.mini-board.size-3 { --mini-fs: 22px; }
+.mini-board.size-5 { --mini-fs: 14px; }
+.mini-board.size-7 { --mini-fs: 10px; gap: 1px; }
+.mini-board.size-9 { --mini-fs: 8px; gap: 1px; }
+.mini-board.size-7 .mini-cell, .mini-board.size-9 .mini-cell { border-radius: 2px; }
+
 /* 빙고 카드 */
 .card {
   background: var(--card); color: var(--ink); border-radius: 20px;

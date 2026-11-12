@@ -1,5 +1,5 @@
 import { RoomConnection, activeRoom, createRoom } from './net.js';
-import { MAX_NUMBER, SIZES, checkBoard, checkNickname, completedLines, fillRandom, goalLines } from './rules.js';
+import { MAX_NUMBER, MAX_PLAYERS, SIZES, checkBoard, checkNickname, completedLines, fillRandom, goalLines } from './rules.js';
 
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const NICK_KEY = 'bingo.nick';
@@ -276,6 +276,9 @@ function saveDraft() {
 function onState(v) {
   prev = view;
   view = v;
+  if (!prev && v.my?.spectator) {
+    toast(v.phase === 'lobby' ? '관전으로 들어왔어요. 참여하기를 누르면 같이 할 수 있어요' : '게임이 진행 중이라 관전으로 들어왔어요');
+  }
   syncDraft(v);
   announce(prev, v);
   render();
@@ -292,8 +295,10 @@ function showShot(call, onMyBoard) {
   const caption = $('shot-caption');
   caption.replaceChildren(
     call.auto ? `${call.byName ?? ''}님 시간이 지나 대포가 자동 발사!` : `${call.byName ?? ''}님의 대포!`,
-    el('br'),
-    el('b', { class: onMyBoard ? 'yes' : 'no', text: onMyBoard ? '내 판에 있어요' : '내 판에 없어요' }),
+    // 관전자(onMyBoard === null)는 내 판 안내 없이
+    ...(onMyBoard === null
+      ? []
+      : [el('br'), el('b', { class: onMyBoard ? 'yes' : 'no', text: onMyBoard ? '내 판에 있어요' : '내 판에 없어요' })]),
   );
   void layer.offsetWidth;
   layer.hidden = false; // 다시 보이면서 애니메이션이 처음부터
@@ -317,7 +322,7 @@ function announce(a, b) {
     const last = b.game.lastCall;
     if (last.how === 'cannon') {
       // 대포는 빙고판 위 레이어에서 공이 날아온다
-      showShot(last, !!b.my?.board?.includes(last.number) && !b.my?.rank);
+      showShot(last, b.my?.spectator ? null : !!b.my?.board?.includes(last.number) && !b.my?.rank);
       buzz([20, 40, 60]);
     } else {
       const ball = $('ball');
@@ -357,8 +362,10 @@ function render() {
   }
 
   renderPlayers(v);
+  renderWatchers(v);
   renderCaller(v);
   renderBoard(v);
+  renderWatch(v);
   renderPicker(v);
   renderHistory(v);
   renderActions(v, isHost);
@@ -380,7 +387,7 @@ function renderPlayers(v) {
   list.replaceChildren(
     ...order
       .map((id) => v.players.find((p) => p.id === id))
-      .filter(Boolean)
+      .filter((p) => p && !p.spectator)
       .map((p) => {
         let dot = '';
         let tag = '';
@@ -412,6 +419,58 @@ function renderPlayers(v) {
   );
 }
 
+function renderWatchers(v) {
+  const watchers = v.players.filter((p) => p.spectator && !p.left);
+  const line = $('watchers');
+  line.hidden = watchers.length === 0;
+  line.textContent = `관전 ${watchers.length}명: ${watchers
+    .map((p) => `${p.id === v.hostId ? '👑 ' : ''}${p.name}${p.id === v.me ? '(나)' : ''}`)
+    .join(', ')}`;
+}
+
+/** 관전자: 게임 중인 모든 사람의 빙고판 */
+function renderWatch(v) {
+  const wrap = $('watch-wrap');
+  wrap.hidden = !(v.my?.spectator && v.phase !== 'lobby' && v.boards);
+  if (wrap.hidden) return;
+  const size = v.settings.size;
+  const lastNum = v.phase === 'playing' ? v.game?.lastCall?.number : undefined;
+  const order = v.game?.order ?? [];
+  const boards = [...v.boards].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  $('watch-grid').replaceChildren(
+    ...boards.map((b) => {
+      const p = v.players.find((x) => x.id === b.id);
+      const lines = completedLines(b.marked, size);
+      const inLine = new Set(lines.flat());
+      const cls = ['mini'];
+      if (v.phase === 'playing' && v.game?.turn === b.id) cls.push('turn');
+      if (p?.left) cls.push('off');
+      const status = p?.left ? '나감' : p?.rank ? `${p.rank}등` : `${lines.length}/${v.goal}줄`;
+      return el(
+        'div',
+        { class: cls.join(' ') },
+        el(
+          'div',
+          { class: 'mini-head' },
+          el('span', { text: `${p?.id === v.hostId ? '👑 ' : ''}${p?.name ?? ''}` }),
+          el('span', { class: `lines${lines.length >= v.goal || p?.rank ? ' done' : ''}`, text: status }),
+        ),
+        el(
+          'div',
+          { class: `mini-board size-${size}`, style: `grid-template-columns: repeat(${size}, 1fr)` },
+          ...b.board.map((n, i) => {
+            const c = ['mini-cell'];
+            if (b.marked[i]) c.push('marked');
+            if (inLine.has(i)) c.push('in-line');
+            if (n === lastNum && !b.marked[i]) c.push('hot');
+            return el('div', { class: c.join(' ') }, el('span', { text: String(n) }));
+          }),
+        ),
+      );
+    }),
+  );
+}
+
 function renderCaller(v) {
   const box = $('caller');
   box.hidden = v.phase === 'lobby';
@@ -432,7 +491,7 @@ function renderCaller(v) {
   // 방금 나온 숫자가 내 판에 있는지 바로 알 수 있게
   const onMyBoard = !!last && !!v.my?.board?.includes(last.number);
   const where = $('caller-where');
-  where.hidden = !last || v.phase !== 'playing' || !!v.my?.rank;
+  where.hidden = !last || v.phase !== 'playing' || !!v.my?.rank || !!v.my?.spectator;
   where.className = `caller-where ${onMyBoard ? 'yes' : 'no'}`;
   where.textContent = onMyBoard ? '내 판에 있어요' : '내 판에 없어요';
 
@@ -461,6 +520,8 @@ function updateTimer() {
 }
 
 function renderBoard(v) {
+  $('card').hidden = !!v.my?.spectator;
+  if (v.my?.spectator) return;
   const size = v.settings.size;
   const board = $('board');
   board.className = `board size-${size}`;
@@ -508,7 +569,7 @@ function renderBoard(v) {
 function onBoardClick(e) {
   const btn = /** @type {HTMLElement} */ (e.target).closest('.cell');
   const v = view;
-  if (!btn || !v || !conn) return;
+  if (!btn || !v || !conn || v.my?.spectator) return;
   const i = Number(btn.getAttribute('data-i'));
   if (v.phase === 'lobby') {
     if (v.my?.ready) {
@@ -541,7 +602,7 @@ function onBoardClick(e) {
 
 function renderPicker(v) {
   const wrap = $('picker-wrap');
-  wrap.hidden = !(v.phase === 'lobby' && !v.my?.ready);
+  wrap.hidden = !(v.phase === 'lobby' && !v.my?.ready && !v.my?.spectator);
   if (wrap.hidden) return;
   const used = new Set(draft.cells.filter((n) => n > 0));
   const picks = [];
@@ -579,9 +640,31 @@ function renderActions(v, isHost) {
   const bar = $('actions');
   const my = v.my;
   const items = [];
-  if (v.phase === 'lobby' && my) {
+  const seated = v.players.filter((p) => !p.left && !p.spectator).length;
+  const startBtn = () =>
+    el('button', {
+      class: 'btn btn-primary',
+      text: seated < 2 ? '2명 이상 모여야 해요' : v.canStart ? '게임 시작' : '준비 기다리는 중',
+      disabled: !v.canStart,
+      onclick: () => conn?.send({ type: 'start' }),
+    });
+  const spectateBtn = () =>
+    el('button', { class: 'btn btn-ghost-light btn-side', text: '관전하기', onclick: () => conn?.send({ type: 'spectate' }) });
+
+  if (v.phase === 'lobby' && my?.spectator) {
+    const full = seated >= MAX_PLAYERS;
+    const joinBtn = el('button', {
+      class: `btn ${isHost ? 'btn-ghost-light btn-side' : 'btn-go'}`,
+      text: full ? `참여 자리 꽉 참 (${MAX_PLAYERS}명)` : '참여하기',
+      disabled: full,
+      onclick: () => conn?.send({ type: 'play' }),
+    });
+    items.push(joinBtn);
+    if (isHost) items.push(startBtn());
+  } else if (v.phase === 'lobby' && my) {
     if (!my.ready) {
       const full = !checkBoard(draft.cells, v.settings.size);
+      items.push(spectateBtn());
       items.push(
         el('button', {
           class: 'btn btn-go',
@@ -592,18 +675,13 @@ function renderActions(v, isHost) {
       );
     } else if (isHost) {
       items.push(el('button', { class: 'btn btn-ghost-light btn-side', text: '준비 취소', onclick: () => conn?.send({ type: 'unready' }) }));
-      const seated = v.players.filter((p) => !p.left).length;
-      items.push(
-        el('button', {
-          class: 'btn btn-primary',
-          text: seated < 2 ? '2명 이상 모여야 해요' : v.canStart ? '게임 시작' : '준비 기다리는 중',
-          disabled: !v.canStart,
-          onclick: () => conn?.send({ type: 'start' }),
-        }),
-      );
+      items.push(startBtn());
     } else {
+      items.push(spectateBtn());
       items.push(el('button', { class: 'btn btn-ghost-light', text: '준비 취소', onclick: () => conn?.send({ type: 'unready' }) }));
     }
+  } else if (v.phase === 'playing' && my?.spectator) {
+    items.push(el('button', { class: 'btn btn-ghost-light', disabled: true, text: '관전 중' }));
   } else if (v.phase === 'playing' && my) {
     const lines = completedLines(my.marked, v.settings.size).length;
     if (my.rank) {
@@ -635,7 +713,14 @@ function renderActions(v, isHost) {
 
 function renderHint(v) {
   let text = '';
-  if (v.phase === 'lobby') {
+  if (v.my?.spectator) {
+    text =
+      v.phase === 'lobby'
+        ? '관전 중이에요. 같이 하려면 참여하기를 눌러요.'
+        : v.phase === 'playing'
+          ? '관전 중이에요. 모든 사람의 빙고판을 볼 수 있어요. 게임이 끝나면 참여할 수 있어요.'
+          : '';
+  } else if (v.phase === 'lobby') {
     if (!v.my?.ready) text = `칸을 고르고 아래에서 숫자를 눌러 채워요. 1~${v.maxNumber} 중 겹치지 않게.`;
     else if (v.hostId === v.me) text = '모두 준비 완료하면 게임을 시작할 수 있어요.';
     else text = '준비 완료! 방장이 시작하길 기다려요.';
@@ -662,7 +747,7 @@ function openSettings() {
 function openResult() {
   const v = view;
   if (!v) return;
-  const ranked = [...v.players].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
+  const ranked = v.players.filter((p) => !p.spectator).sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99));
   $('result').replaceChildren(
     ...ranked.map((p) =>
       el(
@@ -768,7 +853,7 @@ function initRoom() {
     render();
   });
   $('room-leave').addEventListener('click', () => {
-    if (view?.phase === 'playing' && view.my && !view.my.rank && !confirm('게임 중에 나가면 기권이에요. 나갈까요?')) return;
+    if (view?.phase === 'playing' && view.my && !view.my.rank && !view.my.spectator && !confirm('게임 중에 나가면 기권이에요. 나갈까요?')) return;
     exitRoom(true);
   });
 }

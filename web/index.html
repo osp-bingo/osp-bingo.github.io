@@ -82,6 +82,7 @@
     </section>
 
     <ul class="players" id="players" aria-label="참가자"></ul>
+    <p class="watchers" id="watchers" hidden></p>
 
     <section class="card-wrap">
       <div class="card" id="card">
@@ -89,6 +90,11 @@
         <div class="board" id="board" role="grid"></div>
       </div>
       <p class="hint" id="hint"></p>
+    </section>
+
+    <!-- 관전자: 모든 사람의 빙고판 -->
+    <section id="watch-wrap" hidden>
+      <div class="watch-grid" id="watch-grid"></div>
     </section>
 
     <section id="picker-wrap" hidden>
@@ -144,6 +150,7 @@
         <li>나온 숫자는 각자 직접 눌러서 칠해요. 칠하지 않은 칸은 빙고로 치지 않아요.</li>
         <li>판 크기만큼 줄을 완성하면(3×3은 3줄, 9×9는 9줄) <b>빙고</b> 버튼이 켜져요. 먼저 누른 순서대로 등수가 정해지고, 꼴찌가 나올 때까지 계속해요.</li>
         <li>등수가 정해진 사람의 차례는 건너뛰어요.</li>
+        <li>대기실에서는 <b>관전하기</b>로 빠지거나 <b>참여하기</b>로 다시 들어올 수 있어요. 게임 중에 들어오면 관전으로 들어오고, 관전자는 모든 사람의 빙고판을 볼 수 있어요.</li>
         <li>차례 시간(직접 부르기 30초, 대포 15초)이 지나면 대포는 자동으로 발사되고, 직접 부르기는 내 빙고판에서 아직 안 나온 숫자 하나를 무작위로 불러요.</li>
       </ol>
       <div class="dialog-actions"><button class="btn btn-primary">알겠어요</button></div>

@@ -15,6 +15,8 @@ import {
   mark,
   nextWake,
   parseSettings,
+  play,
+  spectate,
   ready,
   rematch,
   start,
@@ -128,6 +130,7 @@ export class BingoRoom extends DurableObject<Env> {
             playerId: isSeated(state, requested) ? requested : null,
             name: url.searchParams.get('name') ?? '',
             newId: crypto.randomUUID(),
+            watch: url.searchParams.get('watch') === '1',
           },
           Date.now(),
         );
@@ -191,6 +194,12 @@ export class BingoRoom extends DurableObject<Env> {
           break;
         case 'unready':
           unready(state, id, now);
+          break;
+        case 'spectate':
+          spectate(state, id, now);
+          break;
+        case 'play':
+          play(state, id, now);
           break;
         case 'start':
           start(state, id, now, secureRandom);
